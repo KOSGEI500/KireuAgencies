@@ -1,0 +1,6 @@
+{
+  "name": "Multi-Property Rental Management",
+  "description": "A scalable multi-property rental management app featuring dynamic branding, tenant self-login, automated anniversary billing, maintenance logging, and Lipa Na M-Pesa STK push integration.",
+  "requestFramePermissions": ["camera"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
