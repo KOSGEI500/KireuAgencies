@@ -254,12 +254,12 @@ export default function TenantPortal({ tenant, property, onLogout }: TenantPorta
   };
 
   return (
-    <div id="tenant-portal-root" className="min-h-screen bg-slate-50 flex flex-col">
+    <div id="tenant-portal-root" className="min-h-screen bg-transparent flex flex-col font-sans text-slate-100">
       {/* 1. PORTAL HEADER - Dynamic Branding */}
-      <header id="tenant-header" className="bg-slate-900 text-white sticky top-0 z-50">
+      <header id="tenant-header" className="bg-slate-950/25 border-b border-white/5 backdrop-blur-md text-white sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-lg bg-emerald-400 text-slate-950 flex items-center justify-center font-bold">
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-emerald-500 to-teal-650 text-slate-950 flex items-center justify-center font-bold">
               <Building2 className="w-5 h-5 text-slate-950" />
             </div>
             <div className="text-left">
@@ -270,9 +270,9 @@ export default function TenantPortal({ tenant, property, onLogout }: TenantPorta
           <button
             id="tenant-logout-btn"
             onClick={onLogout}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white rounded-lg text-xs font-medium transition-all"
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-white/10 hover:bg-white/15 border border-white/10 text-white rounded-lg text-xs font-semibold uppercase tracking-wider transition-all cursor-pointer"
           >
-            <LogOut className="w-3.5 h-3.5" />
+            <LogOut className="w-3.5 h-3.5 text-rose-450" />
             <span>Exit Portal</span>
           </button>
         </div>
@@ -280,20 +280,20 @@ export default function TenantPortal({ tenant, property, onLogout }: TenantPorta
 
       <main className="flex-1 max-w-7xl w-full mx-auto p-4 space-y-4">
         {/* Resident Greeting Card */}
-        <div id="welcome-banner" className="bg-white p-5 shadow-xs flex flex-col md:flex-row justify-between items-start md:items-center gap-4 text-left high-contrast-card">
+        <div id="welcome-banner" className="bg-slate-900/60 backdrop-blur-md border border-white/10 p-5 rounded-2xl flex flex-col md:flex-row justify-between items-start md:items-center gap-4 text-left">
           <div>
-            <div className="flex items-center gap-1 text-xs text-slate-400 font-semibold uppercase tracking-wider mb-0.5">
-              <Compass className="w-3.5 h-3.5 text-emerald-500" />
+            <div className="flex items-center gap-1 text-xs text-slate-450 font-semibold uppercase tracking-wider mb-0.5">
+              <Compass className="w-3.5 h-3.5 text-emerald-400" />
               <span>Estate Dweller profile</span>
             </div>
-            <h2 className="text-xl font-bold font-display text-slate-900">Welcome, {tenant.full_name}</h2>
-            <p className="text-xs text-slate-500">
-              Assigned Apartment Key: <strong className="text-slate-800 tracking-wider">ROOM {tenant.assigned_room_number}</strong> inside {customBrandName} ({property.geographic_location})
+            <h2 className="text-xl font-bold font-display text-white">Welcome, {tenant.full_name}</h2>
+            <p className="text-xs text-slate-300">
+              Assigned Apartment Key: <strong className="text-emerald-450 tracking-wider">ROOM {tenant.assigned_room_number}</strong> inside {customBrandName} ({property.geographic_location})
             </p>
           </div>
           <div className="flex flex-col items-end shrink-0">
-            <span className="text-[10px] text-slate-400 font-semibold mb-1 uppercase">Dynamic Billing Period</span>
-            <span className="px-3 py-1.5 bg-slate-100 text-slate-800 border border-slate-200 font-mono text-xs font-bold rounded-xl">
+            <span className="text-[10px] text-slate-450 font-semibold mb-1 uppercase">Dynamic Billing Period</span>
+            <span className="px-3 py-1.5 bg-slate-950/60 border border-white/10 text-white font-mono text-xs font-bold rounded-xl shadow-inner">
               📅 {billingDetails?.cycleLabel || "Calculating cycle..."}
             </span>
           </div>
@@ -306,79 +306,79 @@ export default function TenantPortal({ tenant, property, onLogout }: TenantPorta
           <div className="lg:col-span-7 space-y-4">
             
             {/* BILLING BALANCE STATUS CARD */}
-            <div id="billing-summary-card" className="bg-white p-5 shadow-xs text-left high-contrast-card">
-              <h3 className="font-bold text-sm text-slate-800 font-display flex items-center gap-2 mb-4">
-                <Receipt className="w-4 h-4 text-emerald-500" />
+            <div id="billing-summary-card" className="bg-slate-900/60 backdrop-blur-md border border-white/10 p-5 rounded-2xl text-left shadow-lg">
+              <h3 className="font-bold text-sm text-white font-display flex items-center gap-2 mb-4">
+                <Receipt className="w-4 h-4 text-emerald-400" />
                 <span>My Active {customBrandName} Billing Summary</span>
               </h3>
 
               <div className="grid grid-cols-3 gap-3 mb-5">
-                <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
-                  <span className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Rent + Utilities</span>
-                  <span className="font-mono text-sm font-bold text-slate-800">
+                <div className="p-3 bg-slate-950/40 rounded-xl border border-white/5">
+                  <span className="text-[10px] font-bold text-slate-450 uppercase block mb-1">Rent + Utilities</span>
+                  <span className="font-mono text-sm font-bold text-white">
                     KES {billingDetails?.dueAmount?.toLocaleString() || "0"}
                   </span>
                 </div>
-                <div className="p-3 bg-emerald-50/50 rounded-xl border border-emerald-100/50">
-                  <span className="text-[10px] font-bold text-emerald-600 uppercase block mb-1 font-medium">Paid This Cycle</span>
-                  <span className="font-mono text-sm font-bold text-emerald-700">
+                <div className="p-3 bg-emerald-950/20 rounded-xl border border-emerald-500/10">
+                  <span className="text-[10px] font-bold text-emerald-400 uppercase block mb-1 font-medium">Paid This Cycle</span>
+                  <span className="font-mono text-sm font-bold text-emerald-400">
                     KES {billingDetails?.clearedAmount?.toLocaleString() || "0"}
                   </span>
                 </div>
-                <div className="p-3 bg-red-50/50 rounded-xl border border-red-100/50">
-                  <span className="text-[10px] font-bold text-red-600 uppercase block mb-1 font-medium">Owed Outstanding</span>
-                  <span className="font-mono text-sm font-bold text-red-700">
+                <div className="p-3 bg-rose-950/20 rounded-xl border border-rose-500/10">
+                  <span className="text-[10px] font-bold text-rose-450 uppercase block mb-1 font-medium">Owed Outstanding</span>
+                  <span className="font-mono text-sm font-bold text-rose-455">
                     KES {billingDetails?.outstandingBalance?.toLocaleString() || "0"}
                   </span>
                 </div>
               </div>
 
-              <div className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-200">
+              <div className="flex items-center justify-between p-3 bg-slate-950/40 rounded-xl border border-white/10">
                 <div className="text-left">
                   <span className="text-[10px] text-slate-400 font-bold uppercase block">Cycle Billing State</span>
-                  <p className="text-[11px] text-slate-500 mt-0.5">Auto-unpaid trigger resets on monthly anniversary: <strong className="text-slate-800 font-mono">{tenant.registration_date.split("-")[2]}th</strong></p>
+                  <p className="text-[11px] text-slate-300 mt-0.5">Auto-unpaid trigger resets on monthly anniversary: <strong className="text-emerald-450 font-mono">{tenant.registration_date.split("-")[2]}th</strong></p>
                 </div>
                 <div>
-                  {billingDetails ? getStatusBadge(billingDetails.status) : <span className="text-xs text-slate-400">Loading...</span>}
+                  {billingDetails ? getStatusBadge(billingDetails.status) : <span className="text-xs text-slate-405">Loading...</span>}
                 </div>
               </div>
             </div>
 
             {/* LIPA NA M-PESA STK PUSH FORM */}
-            <div id="mpesa-billing-card" className="bg-white p-5 shadow-xs text-left high-contrast-card">
+            <div id="mpesa-billing-card" className="bg-slate-900/60 backdrop-blur-md border border-white/10 p-5 rounded-2xl text-left shadow-lg">
               <div className="flex items-center justify-between mb-4">
-                <h3 className="font-bold text-sm text-slate-800 font-display flex items-center gap-2">
-                  <Wallet className="w-5 h-5 text-emerald-500" />
+                <h3 className="font-bold text-sm text-white font-display flex items-center gap-2">
+                  <Wallet className="w-5 h-5 text-emerald-400" />
                   <span>Instant Safaricom Lipa Na M-Pesa Online</span>
                 </h3>
-                <span className="text-[9px] bg-slate-950 text-white font-mono px-2 py-0.5 rounded-md uppercase font-bold tracking-wider">STK Push Push</span>
+                <span className="text-[9px] bg-slate-950 text-emerald-400 border border-emerald-500/20 font-mono px-2 py-0.5 rounded-md uppercase font-bold tracking-wider">STK Push Active</span>
               </div>
 
               {paymentError && (
-                <div className="mb-4 p-3.5 bg-red-50 border border-red-200 rounded-xl text-red-700 text-xs flex gap-2">
+                <div className="mb-4 p-3.5 bg-red-950/40 border border-red-500/30 rounded-xl text-red-300 text-xs flex gap-2">
                   <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
                   <span>{paymentError}</span>
                 </div>
               )}
 
               {paymentSuccess && (
-                <div className="mb-4 p-3.5 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-800 text-xs flex gap-2">
-                  <Check className="w-4 h-4 shrink-0 mt-0.5 text-emerald-600" />
+                <div className="mb-4 p-3.5 bg-emerald-950/40 border border-emerald-500/30 rounded-xl text-emerald-300 text-xs flex gap-2">
+                  <Check className="w-4 h-4 shrink-0 mt-0.5 text-emerald-450" />
                   <span>{paymentSuccess}</span>
                 </div>
               )}
 
               {pendingCheckoutId && (
-                <div className="mb-4 p-4 bg-amber-50 border border-amber-200 rounded-xl text-xs space-y-2 text-amber-900 border-dashed animate-pulse">
+                <div className="mb-4 p-4 bg-amber-955/40 border border-amber-500/30 rounded-xl text-xs space-y-2 text-amber-200 border-dashed animate-pulse">
                   <div className="flex items-center gap-2 font-bold">
-                    <Hourglass className="w-4 h-4 text-amber-600 animate-spin" />
+                    <Hourglass className="w-4 h-4 text-amber-505 animate-spin" />
                     <span>Lipa Na M-Pesa Prompt Triggered!</span>
                   </div>
                   <p className="text-[11px] leading-relaxed">
                     Check your mobile phone lockscreen linked to <strong>+254 {paymentPhone.slice(-9)}</strong>. 
                     Input your PIN to authorize <strong>KES {paymentAmount}</strong> payment for {customBrandName}.
                   </p>
-                  <p className="text-[10px] text-amber-700 italic">
+                  <p className="text-[10px] text-amber-450 italic">
                     Waiting for Safaricom async webhook callback to execute ledger update automatically...
                   </p>
                 </div>
@@ -387,7 +387,7 @@ export default function TenantPortal({ tenant, property, onLogout }: TenantPorta
               <form id="tenant-mpesa-form" onSubmit={handleStkPush} className="space-y-3.5">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-[11px] font-bold text-slate-500 uppercase mb-1">
+                    <label className="block text-[11px] font-bold text-slate-400 uppercase mb-1">
                       Payment Amount (KES)
                     </label>
                     <input
@@ -396,14 +396,14 @@ export default function TenantPortal({ tenant, property, onLogout }: TenantPorta
                       placeholder="e.g. 5000"
                       value={paymentAmount}
                       onChange={(e) => setPaymentAmount(e.target.value)}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-sm font-mono focus:bg-white focus:outline-none focus:ring-2 focus:ring-slate-800"
+                      className="w-full bg-slate-950/50 border border-white/10 rounded-xl px-3 py-2.5 text-sm font-mono text-white focus:outline-none focus:ring-1 focus:ring-emerald-450"
                       disabled={paying || !!pendingCheckoutId}
                       required
                     />
                   </div>
 
                   <div>
-                    <label className="block text-[11px] font-bold text-slate-500 uppercase mb-1">
+                    <label className="block text-[11px] font-bold text-slate-400 uppercase mb-1">
                       M-Pesa Telephone Recipient
                     </label>
                     <input
@@ -412,7 +412,7 @@ export default function TenantPortal({ tenant, property, onLogout }: TenantPorta
                       placeholder="254712345678"
                       value={paymentPhone}
                       onChange={(e) => setPaymentPhone(e.target.value)}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-sm font-mono focus:bg-white focus:outline-none focus:ring-2 focus:ring-slate-800"
+                      className="w-full bg-slate-950/50 border border-white/10 rounded-xl px-3 py-2.5 text-sm font-mono text-white focus:outline-none focus:ring-1 focus:ring-emerald-455"
                       disabled={paying || !!pendingCheckoutId}
                       required
                     />
@@ -423,7 +423,7 @@ export default function TenantPortal({ tenant, property, onLogout }: TenantPorta
                   id="tenant-btn-pay"
                   type="submit"
                   disabled={paying || !!pendingCheckoutId || billingDetails?.outstandingBalance === 0}
-                  className="w-full py-3 mpesa-green hover:opacity-90 disabled:bg-slate-300 text-white font-bold rounded-xl text-xs transition-all flex items-center justify-center gap-2 uppercase tracking-wide cursor-pointer"
+                  className="w-full py-3 mpesa-green hover:opacity-90 disabled:bg-slate-950/30 disabled:text-slate-550 border-0 text-white font-bold rounded-xl text-xs transition-all flex items-center justify-center gap-2 uppercase tracking-wide cursor-pointer shadow-md"
                 >
                   {paying ? "Contacting Safaricom..." : "Lipa na M-Pesa STK Push"}
                   <Smartphone className="w-4 h-4" />
@@ -432,20 +432,20 @@ export default function TenantPortal({ tenant, property, onLogout }: TenantPorta
             </div>
 
             {/* HISTORIC LEDGER */}
-            <div id="tenant-payment-ledger" className="bg-white p-5 shadow-xs text-left high-contrast-card">
-              <h3 className="font-bold text-sm text-slate-800 font-display mb-3">
+            <div id="tenant-payment-ledger" className="bg-slate-900/60 backdrop-blur-md border border-white/10 p-5 rounded-2xl text-left shadow-lg">
+              <h3 className="font-bold text-sm text-white font-display mb-3">
                 🏢 Cleared Payment Receipts
               </h3>
 
               {payments.length === 0 ? (
-                <div className="py-8 bg-slate-50 rounded-xl text-center border border-dashed border-slate-200">
-                  <p className="text-xs text-slate-400">No payment receipts cleared on this app yet.</p>
+                <div className="py-8 bg-slate-950/40 rounded-xl text-center border border-dashed border-white/10">
+                  <p className="text-xs text-slate-450">No payment receipts cleared on this app yet.</p>
                 </div>
               ) : (
-                <div className="overflow-x-auto rounded-xl border border-slate-200">
+                <div className="overflow-x-auto rounded-xl border border-white/10">
                   <table className="w-full text-left border-collapse text-xs">
                     <thead>
-                      <tr className="bg-slate-50 text-slate-400 font-semibold border-b border-slate-200">
+                      <tr className="bg-slate-950/50 text-slate-400 font-semibold border-b border-white/10">
                         <th className="p-3">Ref ID</th>
                         <th className="p-3">Method</th>
                         <th className="p-3 text-right">Amount</th>
@@ -454,19 +454,17 @@ export default function TenantPortal({ tenant, property, onLogout }: TenantPorta
                     </thead>
                     <tbody>
                       {payments.map((p) => (
-                        <tr key={p.transaction_id} className="border-b border-slate-100 hover:bg-slate-50/50">
-                          <td className="p-3 font-mono text-slate-700 font-semibold">{p.transaction_id}</td>
+                        <tr key={p.transaction_id} className="border-b border-white/5 hover:bg-white/5">
+                          <td className="p-3 font-mono text-slate-205 font-semibold">{p.transaction_id}</td>
                           <td className="p-3">
-                            <span className={`status-badge ${
-                              p.payment_mode === "M-PESA" ? "bg-emerald-100 text-emerald-700" : "bg-teal-100 text-teal-850"
-                            }`}>
+                            <span className="status-badge bg-emerald-950/60 border border-emerald-500/20 text-emerald-450">
                               {p.payment_mode}
                             </span>
                           </td>
-                          <td className="p-3 text-right font-mono font-bold text-slate-850">
+                          <td className="p-3 text-right font-mono font-bold text-slate-100">
                             {p.amount.toLocaleString()} KES
                           </td>
-                          <td className="p-3 text-right text-slate-400 font-medium">
+                          <td className="p-3 text-right text-slate-450 font-medium">
                             {new Date(p.timestamp).toLocaleDateString("en-KE")}
                           </td>
                         </tr>
@@ -483,47 +481,47 @@ export default function TenantPortal({ tenant, property, onLogout }: TenantPorta
           <div className="lg:col-span-5 space-y-4">
             
             {/* TICKET REPORT FORM */}
-            <div id="maintenance-reporter-card" className="bg-white p-5 shadow-xs text-left high-contrast-card">
-              <h3 className="font-bold text-sm text-slate-800 font-display flex items-center gap-1.5 mb-4">
-                <Wrench className="w-4 h-4 text-emerald-500" />
+            <div id="maintenance-reporter-card" className="bg-slate-900/60 backdrop-blur-md border border-white/10 p-5 rounded-2xl text-left shadow-lg">
+              <h3 className="font-bold text-sm text-white font-display flex items-center gap-1.5 mb-4">
+                <Wrench className="w-4 h-4 text-emerald-400" />
                 <span>On-Site Repair Request Desk</span>
               </h3>
 
               {ticketError && (
-                <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-xs flex gap-2">
+                <div className="mb-4 p-3 bg-red-955/40 border border-red-500/30 rounded-xl text-red-300 text-xs flex gap-2">
                   <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
                   <span>{ticketError}</span>
                 </div>
               )}
 
               {ticketSuccess && (
-                <div className="mb-4 p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-800 text-xs flex gap-2">
-                  <Check className="w-4 h-4 shrink-0 mt-0.5 text-emerald-600" />
+                <div className="mb-4 p-3 bg-emerald-955/40 border border-emerald-500/30 rounded-xl text-emerald-300 text-xs flex gap-2">
+                  <Check className="w-4 h-4 shrink-0 mt-0.5 text-emerald-400" />
                   <span>{ticketSuccess}</span>
                 </div>
               )}
 
               <form id="maintenance-ticket-form" onSubmit={handleTicketSubmit} className="space-y-4">
                 <div>
-                  <label className="block text-[11px] font-bold text-slate-500 uppercase mb-1">
+                  <label className="block text-[11px] font-bold text-slate-400 uppercase mb-1">
                     Select Target Issue Type
                   </label>
                   <select
                     id="ticket-type-select"
                     value={issueType}
                     onChange={(e) => setIssueType(e.target.value as any)}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs font-semibold focus:bg-white focus:outline-none focus:ring-2 focus:ring-slate-800 text-slate-800"
+                    className="w-full bg-slate-950/50 border border-white/10 rounded-xl px-3.5 py-2.5 text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-emerald-450 text-white"
                   >
-                    <option value="Bulb">Bulb 💡</option>
-                    <option value="Socket">Socket 🔌</option>
-                    <option value="Toilet">Toilet 🚽</option>
-                    <option value="Paint">Paint 🎨</option>
-                    <option value="Other">Other 🛠️</option>
+                    <option value="Bulb" className="bg-slate-900">Bulb 💡</option>
+                    <option value="Socket" className="bg-slate-900">Socket 🔌</option>
+                    <option value="Toilet" className="bg-slate-900">Toilet 🚽</option>
+                    <option value="Paint" className="bg-slate-900">Paint 🎨</option>
+                    <option value="Other" className="bg-slate-900">Other 🛠️</option>
                   </select>
                 </div>
 
                 <div>
-                  <label className="block text-[11px] font-bold text-slate-500 uppercase mb-1">
+                  <label className="block text-[11px] font-bold text-slate-400 uppercase mb-1">
                     Damage Detail Description
                   </label>
                   <textarea
@@ -532,20 +530,20 @@ export default function TenantPortal({ tenant, property, onLogout }: TenantPorta
                     placeholder="Provide specific details about which room location and exact breakage..."
                     value={description}
                     onChange={(e) => setDescription(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 text-xs focus:bg-white focus:outline-none focus:ring-2 focus:ring-slate-800"
+                    className="w-full bg-slate-950/50 border border-white/10 rounded-xl px-3.5 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-emerald-450"
                     required
                   />
                 </div>
 
                 {/* Smartphone Photo Camera Capture attachment hook */}
                 <div>
-                  <label className="block text-[11px] font-bold text-slate-500 uppercase mb-1 flex items-center justify-between">
+                  <label className="block text-[11px] font-bold text-slate-400 uppercase mb-1 flex items-center justify-between">
                     <span>Camera Damage Photo</span>
-                    <span className="text-[9px] text-slate-400 capitalize">Optional instant camera trigger</span>
+                    <span className="text-[9px] text-slate-450 capitalize">Optional instant camera trigger</span>
                   </label>
                   <div className="flex items-center gap-3">
-                    <label className="flex items-center gap-2 px-3 py-2 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 cursor-pointer transition-all">
-                      <Camera className="w-4 h-4 text-slate-650" />
+                    <label className="flex items-center gap-2 px-3 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-xs font-semibold text-slate-300 cursor-pointer transition-all">
+                      <Camera className="w-4 h-4 text-emerald-400" />
                       <span>Snap Breakage</span>
                       <input
                         id="photo-capture-input"
@@ -580,7 +578,7 @@ export default function TenantPortal({ tenant, property, onLogout }: TenantPorta
                   id="ticket-btn-submit"
                   type="submit"
                   disabled={reporting}
-                  className="w-full py-2.5 bg-slate-900 hover:bg-slate-800 disabled:bg-slate-400 text-white font-bold rounded-xl text-xs transition-all flex items-center justify-center gap-1.5 uppercase cursor-pointer"
+                  className="w-full py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 disabled:bg-slate-950 border-0 text-white font-bold rounded-xl text-xs transition-all flex items-center justify-center gap-1.5 uppercase cursor-pointer"
                 >
                   {reporting ? "Logging ticket..." : "File Repair Request"}
                   <Wrench className="w-3.5 h-3.5" />
@@ -589,35 +587,35 @@ export default function TenantPortal({ tenant, property, onLogout }: TenantPorta
             </div>
 
             {/* PREVIOUS REPAIR TICKETS */}
-            <div id="maintenance-tickets-list" className="bg-white p-5 shadow-xs text-left high-contrast-card">
-              <h3 className="font-bold text-sm text-slate-800 font-display mb-3">
+            <div id="maintenance-tickets-list" className="bg-slate-900/60 backdrop-blur-md border border-white/10 p-5 rounded-2xl text-left shadow-lg">
+              <h3 className="font-bold text-sm text-white font-display mb-3">
                 🧰 Filed Repair History
               </h3>
 
               {tickets.length === 0 ? (
-                <div className="py-6 bg-slate-50 rounded-xl text-center border border-dashed border-slate-200">
-                  <p className="text-[10px] text-slate-400">All fixtures and connections are currently running tidily.</p>
+                <div className="py-6 bg-slate-955/40 rounded-xl text-center border border-dashed border-white/10">
+                  <p className="text-[10px] text-slate-450">All fixtures and connections are currently running tidily.</p>
                 </div>
               ) : (
                 <div className="space-y-2.5 max-h-[300px] overflow-y-auto pr-1">
                   {tickets.map((t) => (
-                    <div key={t.ticket_id} className="p-3 bg-slate-50 border border-slate-200 rounded-xl flex items-start gap-2.5">
-                      <div className="w-7 h-7 rounded-lg bg-white border border-slate-200 flex items-center justify-center text-xs text-slate-500 shrink-0">
+                    <div key={t.ticket_id} className="p-3 bg-slate-955/40 border border-white/5 rounded-xl flex items-start gap-2.5">
+                      <div className="w-7 h-7 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center text-xs text-slate-400 shrink-0">
                         {t.issue_type === "Toilet" ? "🚽" : t.issue_type === "Bulb" ? "💡" : t.issue_type === "Socket" ? "🔌" : t.issue_type === "Paint" ? "🎨" : "🛠️"}
                       </div>
                       <div className="flex-1 min-w-0 text-left">
                         <div className="flex items-center justify-between gap-1 mb-0.5">
-                          <span className="text-[11px] font-bold text-slate-800">{t.issue_type} Maintenance</span>
+                          <span className="text-[11px] font-bold text-slate-200">{t.issue_type} Maintenance</span>
                           {getTicketStatusBadge(t.status)}
                         </div>
-                        <p className="text-[11px] text-slate-500 line-clamp-2 leading-relaxed">{t.description}</p>
+                        <p className="text-[11px] text-slate-300 line-clamp-2 leading-relaxed">{t.description}</p>
                         {t.photo_url && (
                           <div className="mt-1.5">
                             <span className="text-[9px] text-slate-400 font-medium block mb-0.5">Snapped Photo:</span>
                             <img
                               src={t.photo_url}
                               alt="Attachment"
-                              className="w-14 h-14 rounded-md object-cover ring-1 ring-slate-200"
+                              className="w-14 h-14 rounded-md object-cover ring-1 ring-slate-800"
                               referrerPolicy="no-referrer"
                             />
                           </div>
@@ -638,8 +636,8 @@ export default function TenantPortal({ tenant, property, onLogout }: TenantPorta
 
       </main>
 
-      <footer className="py-4 text-center text-[10px] text-slate-400 bg-white border-t border-slate-100 flex items-center justify-center gap-1">
-        <Sparkles className="w-3.5 h-3.5 text-emerald-500" />
+      <footer className="py-4 text-center text-[10px] text-slate-450 bg-slate-950/50 border-t border-white/5 flex items-center justify-center gap-1">
+        <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
         <span>Estate billing computations compiled in real-time. Port 3000 Ingress Routing Active.</span>
       </footer>
     </div>

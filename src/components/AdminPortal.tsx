@@ -2,7 +2,8 @@ import React, { useState, useEffect } from "react";
 import { Property, Room, Tenant, Payment, MaintenanceTicket, AdminSession } from "../types";
 import { 
   Building2, Users, Receipt, Wrench, Shield, LogOut, CheckCircle, Plus, 
-  Trash2, PlusCircle, Smartphone, Sparkles, Filter, Landmark, MapPin, Eye, AlertCircle
+  Trash2, PlusCircle, Smartphone, Sparkles, Filter, Landmark, MapPin, Eye, AlertCircle, Clock,
+  Menu, X, User
 } from "lucide-react";
 
 interface AdminPortalProps {
@@ -23,8 +24,29 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
   const [payments, setPayments] = useState<Payment[]>([]);
   const [maintenance, setMaintenance] = useState<MaintenanceTicket[]>([]);
 
-  // Tab State
-  const [activeTab, setActiveTab] = useState<"dashboard" | "rooms" | "tenants" | "payments" | "maintenance" | "properties">("dashboard");
+  // Tab State with "clock" view support
+  const [activeTab, setActiveTab] = useState<"dashboard" | "rooms" | "tenants" | "payments" | "maintenance" | "properties" | "clock" | "caretakers">("dashboard");
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  const handleTabClick = (tab: "dashboard" | "rooms" | "tenants" | "payments" | "maintenance" | "properties" | "clock" | "caretakers") => {
+    setActiveTab(tab);
+    setMobileMenuOpen(false);
+  };
+
+  // Live clock and synchronization trails
+  const [currentTime, setCurrentTime] = useState(new Date());
+  const [syncLogs, setSyncLogs] = useState<string[]>([]);
+
+  // Deletion Terms & Confirmation Overlay State
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<{
+    type: 'room' | 'property' | 'tenant' | 'payment' | 'maintenance';
+    id: string; // identifier
+    displayLabel: string;
+    extraId?: string; // used for room property mapping
+  } | null>(null);
+  const [termsAccepted, setTermsAccepted] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   // Form states
   const [newPropName, setNewPropName] = useState("");
@@ -46,6 +68,16 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
   const [vacantRooms, setVacantRooms] = useState<Room[]>([]);
   const [tenantError, setTenantError] = useState<string | null>(null);
   const [tenantSuccess, setTenantSuccess] = useState<string | null>(null);
+
+  // Caretaker Form & List States
+  const [caretakersList, setCaretakersList] = useState<any[]>([]);
+  const [newCaretakerName, setNewCaretakerName] = useState("");
+  const [newCaretakerEmail, setNewCaretakerEmail] = useState("");
+  const [newCaretakerPropId, setNewCaretakerPropId] = useState("");
+  const [newCaretakerRoom, setNewCaretakerRoom] = useState("");
+  const [caretakerError, setCaretakerError] = useState<string | null>(null);
+  const [caretakerSuccess, setCaretakerSuccess] = useState<string | null>(null);
+  const [isSavingCaretaker, setIsSavingCaretaker] = useState(false);
 
   // Clear balance Form
   const [manualPayTenantId, setManualPayTenantId] = useState("");
@@ -90,6 +122,13 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
     }
   }, [selectedPropertyId, activeTab]);
 
+  // Load caretakers list on tab change
+  useEffect(() => {
+    if (!isCaretaker) {
+      fetchCaretakers();
+    }
+  }, [activeTab]);
+
   // Regular dashboard polling (refresh telemetry every 5s)
   useEffect(() => {
     const interval = setInterval(() => {
@@ -97,6 +136,24 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
     }, 5000);
     return () => clearInterval(interval);
   }, [selectedPropertyId]);
+
+  // Live Timer Clock Effect
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentTime(new Date());
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  // System Sync Log Initializer
+  useEffect(() => {
+    const timeStr = new Date().toLocaleTimeString();
+    setSyncLogs([
+      `[${timeStr}] Initialized Admin Portal session for: ${session.name}`,
+      `[${timeStr}] Active synchronization worker bound @ 5000ms periodic heartbeat.`,
+      `[${timeStr}] Safaricom Daraja M-Pesa STK Push API sandbox fully online.`
+    ]);
+  }, [session.name]);
 
   // Dynamic query of vacant rooms within selected property
   useEffect(() => {
@@ -123,34 +180,118 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
     try {
       // 1. Fetch Rooms in Property
       const roomsResponse = await fetch(`/api/properties/${selectedPropertyId}/rooms`);
+      let loadedRooms: Room[] = [];
       if (roomsResponse.ok) {
-        const roomsList = await roomsResponse.json();
-        setRooms(roomsList);
+        loadedRooms = await roomsResponse.json();
+        setRooms(loadedRooms);
       }
 
       // 2. Fetch Tenants
       const tenantsResponse = await fetch("/api/tenants");
+      let loadedTenants: any[] = [];
       if (tenantsResponse.ok) {
         const tenantsList: any[] = await tenantsResponse.json();
-        // Fence tenants list to property if caretaker or based on select.
-        setTenants(tenantsList.filter(t => t.property_id === selectedPropertyId));
+        loadedTenants = tenantsList.filter(t => t.property_id === selectedPropertyId);
+        setTenants(loadedTenants);
       }
 
       // 3. Fetch Payments
       const paymentsResponse = await fetch("/api/payments");
+      let loadedPayments: Payment[] = [];
       if (paymentsResponse.ok) {
         const paymentsList: Payment[] = await paymentsResponse.json();
-        setPayments(paymentsList.filter(p => p.property_id === selectedPropertyId));
+        loadedPayments = paymentsList.filter(p => p.property_id === selectedPropertyId);
+        setPayments(loadedPayments);
       }
 
       // 4. Fetch Maintenance Tickets
       const maintenanceResponse = await fetch("/api/maintenance");
+      let loadedTickets: MaintenanceTicket[] = [];
       if (maintenanceResponse.ok) {
         const maintenanceList: MaintenanceTicket[] = await maintenanceResponse.json();
-        setMaintenance(maintenanceList.filter(m => m.property_id === selectedPropertyId));
+        loadedTickets = maintenanceList.filter(m => m.property_id === selectedPropertyId);
+        setMaintenance(loadedTickets);
       }
+
+      // Append log entry cleanly
+      const logStr = `[${new Date().toLocaleTimeString()}] Auto-Sync: Verified ${loadedRooms.length} rooms, ${loadedTenants.length} tenants, ${loadedPayments.length} payments, and ${loadedTickets.length} maintenance tickets.`;
+      setSyncLogs(prev => [logStr, ...prev.slice(0, 49)]);
     } catch (error) {
       console.error("Error fetching admin telemetry metrics:", error);
+    }
+  };
+
+  const triggerDeleteFlow = (
+    type: 'room' | 'property' | 'tenant' | 'payment' | 'maintenance',
+    id: string,
+    displayLabel: string,
+    extraId?: string
+  ) => {
+    setDeleteTarget({ type, id, displayLabel, extraId });
+    setTermsAccepted(false);
+    setDeleteModalOpen(true);
+  };
+
+  const executeDeletion = async () => {
+    if (!deleteTarget) return;
+    if (!termsAccepted) {
+      alert("Please accept the Terms and Conditions to authorize permanent record deletion.");
+      return;
+    }
+
+    setIsDeleting(true);
+    try {
+      let url = "";
+      switch (deleteTarget.type) {
+        case "property":
+          url = `/api/properties/${deleteTarget.id}`;
+          break;
+        case "room":
+          url = `/api/properties/${deleteTarget.extraId}/rooms/${deleteTarget.id}`;
+          break;
+        case "tenant":
+          url = `/api/tenants/${deleteTarget.id}`;
+          break;
+        case "payment":
+          url = `/api/payments/${deleteTarget.id}`;
+          break;
+        case "maintenance":
+          url = `/api/maintenance/${deleteTarget.id}`;
+          break;
+      }
+
+      const response = await fetch(url, { method: "DELETE" });
+      if (!response.ok) {
+        const d = await response.json();
+        throw new Error(d.error || "Server rejected deletion.");
+      }
+
+      // Success
+      setDeleteModalOpen(false);
+      setDeleteTarget(null);
+      setTermsAccepted(false);
+
+      if (deleteTarget.type === "property") {
+        onRefreshProperties();
+        const remaining = properties.filter(p => p.property_id !== deleteTarget.id);
+        if (remaining.length > 0) {
+          setSelectedPropertyId(remaining[0].property_id);
+        } else {
+          setSelectedPropertyId("");
+        }
+      }
+
+      fetchPropertySpecifics();
+      
+      const timeStr = new Date().toLocaleTimeString();
+      setSyncLogs(prev => [
+        `[${timeStr}] Database Event: Purged ${deleteTarget.type.toUpperCase()} record (${deleteTarget.displayLabel}) completely.`,
+        ...prev
+      ]);
+    } catch (err: any) {
+      alert(err.message || "Failed to delete item.");
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -259,12 +400,92 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
         throw new Error(data.error || "Failed to register resident.");
       }
 
-      setTenantSuccess(`Tenant "${newTenantName}" registered inside Room ${newTenantRoom}. Unit occupied.`);
+      setTenantSuccess(`Tenant "${newTenantName}" registered inside Room ${newTenantRoom}! Security credentials auto-configured: Username (Phone Number): ${cleanPhone}, Access PIN: Room "${newTenantRoom}" or name PIN "${newTenantName.trim().split(" ")[0]}".`);
       setNewTenantName("");
       setNewTenantPhone("");
       fetchPropertySpecifics();
     } catch (err: any) {
       setTenantError(err.message || "Error register tenant.");
+    }
+  };
+
+  // Caretaker Handlers
+  const fetchCaretakers = async () => {
+    try {
+      const response = await fetch("/api/caretakers");
+      if (response.ok) {
+        const data = await response.json();
+        setCaretakersList(data);
+      }
+    } catch (err) {
+      console.error("Error fetching caretakers:", err);
+    }
+  };
+
+  const handleRegisterCaretaker = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (isCaretaker) return;
+
+    setCaretakerError(null);
+    setCaretakerSuccess(null);
+
+    if (!newCaretakerName || !newCaretakerEmail || !newCaretakerPropId) {
+      setCaretakerError("Full name, email address, and managed building plot are required.");
+      return;
+    }
+
+    setIsSavingCaretaker(true);
+    try {
+      const response = await fetch("/api/caretakers", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: newCaretakerName.trim(),
+          email: newCaretakerEmail.trim().toLowerCase(),
+          property_id: newCaretakerPropId,
+          room_number: newCaretakerRoom.trim() || undefined
+        })
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to register caretaker.");
+      }
+
+      const assignedPlotName = properties.find(p => p.property_id === newCaretakerPropId)?.property_name || "Plot";
+      setCaretakerSuccess(`Caretaker "${newCaretakerName}" registered successfully! Security credentials PIN generated: "${data.caretaker.pin}". Assignee room validated in ${assignedPlotName}.`);
+      setNewCaretakerName("");
+      setNewCaretakerEmail("");
+      setNewCaretakerRoom("");
+      
+      // Refresh options
+      fetchCaretakers();
+      onRefreshProperties();
+    } catch (err: any) {
+      setCaretakerError(err.message || "Error registering caretaker.");
+    } finally {
+      setIsSavingCaretaker(false);
+    }
+  };
+
+  const handleDeleteCaretaker = async (caretakerId: string) => {
+    if (isCaretaker) return;
+    if (!window.confirm("Are you sure you want to revoke this caretaker's management credentials?")) return;
+
+    try {
+      const response = await fetch(`/api/caretakers/${caretakerId}`, {
+        method: "DELETE"
+      });
+      if (response.ok) {
+        fetchCaretakers();
+        onRefreshProperties();
+      } else {
+        const data = await response.json();
+        alert(data.error || "Failed to revoke caretaker.");
+      }
+    } catch (err) {
+      console.error("Error deleting caretaker:", err);
+      alert("Error contacting server.");
     }
   };
 
@@ -390,16 +611,67 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
   const resolvingTicketsCount = maintenance.filter(m => m.status === "In Progress").length;
 
   return (
-    <div id="admin-portal-root" className="min-h-screen bg-slate-50 flex flex-col md:flex-row text-left">
+    <div id="admin-portal-root" className="min-h-screen bg-transparent flex flex-col md:flex-row text-left">
       
-      {/* SIDEBAR NAVIGATION - Optimized for both desktop and mobile rails */}
-      <aside id="admin-sidebar" className="w-full md:w-64 bg-slate-900 text-white shrink-0 flex flex-col border-r border-slate-800">
-        <div className="p-5 border-b border-slate-800 flex items-center gap-2">
-          <Shield className="w-6 h-6 text-emerald-400" />
-          <div className="text-left">
-            <h2 className="text-sm font-bold tracking-tight font-display text-white">Landlord Desk Console</h2>
-            <p className="text-[10px] text-slate-400 font-mono font-medium">{session.role} Auth Session</p>
+      {/* MOBILE TOP BAR */}
+      <header className="md:hidden bg-slate-900 border-b border-slate-800 text-white px-4 py-3 flex items-center justify-between sticky top-0 z-30 w-full shrink-0">
+        <div className="flex items-center gap-2.5">
+          <button
+            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+            className="p-1.5 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white transition-all cursor-pointer"
+            aria-label="Toggle navigation menu"
+          >
+            {mobileMenuOpen ? <X className="w-5 h-5 text-rose-400" /> : <Menu className="w-5 h-5 text-emerald-400" />}
+          </button>
+          
+          <div className="flex items-center gap-2">
+            <Shield className="w-5 h-5 text-emerald-400" />
+            <div className="text-left">
+              <h1 className="text-xs font-extrabold font-display leading-tight text-white">{activeBrandName || "Landlord Deck"}</h1>
+              <p className="text-[9px] text-slate-400 font-mono -mt-0.5">Admin Ops Portal</p>
+            </div>
           </div>
+        </div>
+
+        <div className="w-7 h-7 rounded-full bg-slate-800 flex items-center justify-center text-[10px] font-mono font-bold text-emerald-400 border border-slate-700 uppercase" title={session.name}>
+          {session.name ? session.name[0] : "A"}
+        </div>
+      </header>
+
+      {/* MOBILE BACKDROP OVERLAY */}
+      {mobileMenuOpen && (
+        <div 
+          onClick={() => setMobileMenuOpen(false)} 
+          className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs z-35 md:hidden animate-in fade-in duration-200"
+        />
+      )}
+
+      {/* SIDEBAR NAVIGATION - Optimized for both desktop and mobile rails */}
+      <aside 
+        id="admin-sidebar" 
+        className={`fixed inset-y-0 left-0 z-40 w-64 bg-slate-900 text-white shrink-0 flex flex-col border-r border-slate-800 transform md:transform-none md:static md:translate-x-0 transition-transform duration-200 ease-in-out ${
+          mobileMenuOpen ? "translate-x-0" : "-translate-x-full"
+        }`}
+      >
+        <div className="p-5 border-b border-slate-800 flex items-center justify-between md:justify-start gap-2">
+          <div className="flex items-center gap-2">
+            <Shield className="w-6 h-6 text-emerald-400" />
+            <div className="text-left">
+              <h2 className="text-xs font-bold tracking-tight font-display text-white truncate max-w-[150px]" title={session.name}>
+                {session.name || "Landlord Desk Console"}
+              </h2>
+              <p className="text-[9px] text-slate-400 font-mono">
+                {session.email ? session.email : `${session.role} Session`}
+              </p>
+            </div>
+          </div>
+          {/* Close button inside sidebar for mobile drawer */}
+          <button 
+            onClick={() => setMobileMenuOpen(false)}
+            className="md:hidden p-1 hover:bg-slate-800 rounded-md text-slate-400 hover:text-white transition-all"
+          >
+            <X className="w-4 h-4" />
+          </button>
         </div>
 
         {/* Current Active Building branding card inside the Sidebar */}
@@ -423,7 +695,7 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
                 id="sidebar-property-select"
                 value={selectedPropertyId}
                 onChange={(e) => setSelectedPropertyId(e.target.value)}
-                className="w-full bg-slate-800 border border-slate-700 text-slate-200 rounded-lg py-1.5 px-2.5 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-400 appearance-none"
+                className="w-full bg-slate-800 border border-slate-700 text-slate-200 rounded-lg py-1.5 px-2.5 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-400 appearance-none text-left"
               >
                 {properties.map(p => (
                   <option key={p.property_id} value={p.property_id}>
@@ -436,10 +708,10 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
           </div>
         )}
 
-        <nav className="flex-grow p-4 space-y-1">
+        <nav className="flex-grow p-4 space-y-1 overflow-y-auto">
           <button
-            onClick={() => setActiveTab("dashboard")}
-            className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold rounded-lg transition-all ${
+            onClick={() => handleTabClick("dashboard")}
+            className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold rounded-lg transition-all text-left ${
               activeTab === "dashboard" ? "sidebar-active text-white shadow-xs" : "text-slate-400 hover:text-white hover:bg-slate-800"
             }`}
           >
@@ -448,8 +720,8 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
           </button>
           
           <button
-            onClick={() => setActiveTab("rooms")}
-            className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold rounded-lg transition-all ${
+            onClick={() => handleTabClick("rooms")}
+            className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold rounded-lg transition-all text-left ${
               activeTab === "rooms" ? "sidebar-active text-white shadow-xs" : "text-slate-400 hover:text-white hover:bg-slate-800"
             }`}
           >
@@ -458,8 +730,8 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
           </button>
 
           <button
-            onClick={() => setActiveTab("tenants")}
-            className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold rounded-lg transition-all ${
+            onClick={() => handleTabClick("tenants")}
+            className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold rounded-lg transition-all text-left ${
               activeTab === "tenants" ? "sidebar-active text-white shadow-xs" : "text-slate-400 hover:text-white hover:bg-slate-800"
             }`}
           >
@@ -468,8 +740,8 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
           </button>
 
           <button
-            onClick={() => setActiveTab("payments")}
-            className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold rounded-lg transition-all ${
+            onClick={() => handleTabClick("payments")}
+            className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold rounded-lg transition-all text-left ${
               activeTab === "payments" ? "sidebar-active text-white shadow-xs" : "text-slate-400 hover:text-white hover:bg-slate-800"
             }`}
           >
@@ -478,8 +750,8 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
           </button>
 
           <button
-            onClick={() => setActiveTab("maintenance")}
-            className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold rounded-lg transition-all relative ${
+            onClick={() => handleTabClick("maintenance")}
+            className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold rounded-lg transition-all relative text-left ${
               activeTab === "maintenance" ? "sidebar-active text-white shadow-xs" : "text-slate-400 hover:text-white hover:bg-slate-800"
             }`}
           >
@@ -491,19 +763,41 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
           </button>
 
           {!isCaretaker && (
-            <button
-              onClick={() => setActiveTab("properties")}
-              className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold rounded-lg transition-all ${
-                activeTab === "properties" ? "sidebar-active text-white shadow-xs" : "text-slate-400 hover:text-white hover:bg-slate-800"
-              }`}
-            >
-              <PlusCircle className="w-4 h-4" />
-              <span>Register New Plot</span>
-            </button>
+            <>
+              <button
+                onClick={() => handleTabClick("properties")}
+                className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold rounded-lg transition-all text-left ${
+                  activeTab === "properties" ? "sidebar-active text-white shadow-xs" : "text-slate-400 hover:text-white hover:bg-slate-800"
+                }`}
+              >
+                <PlusCircle className="w-4 h-4" />
+                <span>Register New Plot</span>
+              </button>
+
+              <button
+                onClick={() => handleTabClick("caretakers")}
+                className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold rounded-lg transition-all text-left ${
+                  activeTab === "caretakers" ? "sidebar-active text-white shadow-xs" : "text-slate-400 hover:text-white hover:bg-slate-800"
+                }`}
+              >
+                <User className="w-4 h-4 text-emerald-500 animate-pulse" />
+                <span>Register Caretaker</span>
+              </button>
+            </>
           )}
+
+          <button
+            onClick={() => handleTabClick("clock")}
+            className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold rounded-lg transition-all text-left ${
+              activeTab === "clock" ? "sidebar-active text-white shadow-xs" : "text-slate-400 hover:text-white hover:bg-slate-800"
+            }`}
+          >
+            <Clock className="w-4 h-4" />
+            <span>Clock Sync Auditor</span>
+          </button>
         </nav>
 
-        <div className="p-4 border-t border-slate-800">
+        <div className="p-4 border-t border-slate-800 shrink-0">
           <div className="flex items-center gap-2 text-xs mb-3 text-slate-400 px-1">
             <div className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></div>
             <span>Agent Server Online</span>
@@ -521,30 +815,53 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
       {/* MAIN VIEWPORT SCREEN AREA */}
       <main className="flex-1 overflow-y-auto p-4 md:p-8 space-y-6">
         
-        {/* TOP STATUS NAVIGATION PANEL */}
-        <header id="admin-top-panel" className="bg-white rounded-2xl p-4 border border-slate-200/60 shadow-xs flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-          <div className="text-left">
-            <span className="text-[10px] text-slate-400 uppercase tracking-wide font-bold">Relational Admin Platform</span>
-            <h1 className="text-lg font-extrabold tracking-tight font-display text-slate-900 mt-0.5">{activeBrandName} operations</h1>
-            <p className="text-[11px] text-slate-400">
-              Assigned Estate Admin: <strong className="text-slate-850">{session.name}</strong> 
-              {isCaretaker && " (Fenced caretakers RBAC locks active)"}
-            </p>
-          </div>
-          <div className="flex items-center gap-3">
-            <span className="text-[10px] font-mono text-slate-400">Autosync standard polling</span>
-            <button
-              onClick={fetchPropertySpecifics}
-              className="px-3.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 font-mono text-xs rounded-xl font-bold border border-slate-200 flex items-center gap-1 cursor-pointer transition-all"
-            >
-              🔄 Forcesync
-            </button>
-          </div>
-        </header>
-
         {/* 2. WORKING DASHBOARD TAB */}
         {activeTab === "dashboard" && (
-          <div className="space-y-6">
+          <div className="space-y-6 animate-in fade-in duration-300">
+            {/* Custom Luxurious Page Header */}
+            <div className="bg-slate-900 rounded-3xl p-6 sm:p-8 text-white relative overflow-hidden border border-slate-800 shadow-xl">
+              <div className="absolute top-0 right-0 w-96 h-96 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none"></div>
+              
+              <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6 relative z-10">
+                <div className="space-y-2 text-left">
+                  <div className="inline-flex items-center gap-2 px-3 py-1 bg-emerald-500/15 rounded-full border border-emerald-500/20 text-emerald-400 font-mono text-[10px] font-bold uppercase tracking-wider">
+                    <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-ping"></span>
+                    Estate Operations Control Hub
+                  </div>
+                  <h2 className="text-2xl font-extrabold font-display tracking-tight text-white">
+                    {activeBrandName} Dashboard
+                  </h2>
+                  <p className="text-slate-400 text-xs max-w-xl leading-relaxed">
+                    Estate Admin: <strong className="text-slate-200 font-bold">{session.name}</strong>{isCaretaker && " (Caretaker Locks Active)"}. Supervise collections, occupancy stats, and automated resident M-Pesa billings.
+                  </p>
+                </div>
+                
+                <div className="flex flex-wrap items-center gap-3">
+                  <div className="p-3 bg-slate-800/80 backdrop-blur-xs rounded-xl border border-slate-700/50 text-center min-w-[125px]">
+                    <span className="text-[9px] uppercase font-bold text-slate-400 tracking-wider block mb-0.5">Clearing Ledger</span>
+                    <div className="font-mono text-xs font-black text-emerald-400">KES {totalClearedInPlot.toLocaleString()}</div>
+                  </div>
+                  
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setActiveTab("clock")}
+                      className="px-3 py-2 bg-slate-800 hover:bg-slate-750 text-white font-mono text-xs rounded-xl border border-slate-700 flex items-center gap-2 transition-all cursor-pointer shadow-sm hover:border-emerald-500/45"
+                      title="Click to view full System clock sync logs"
+                    >
+                      <Clock className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
+                      <span>{currentTime.toLocaleTimeString()}</span>
+                    </button>
+
+                    <button
+                      onClick={fetchPropertySpecifics}
+                      className="px-3.5 py-2 bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-mono text-xs rounded-xl font-bold flex items-center gap-1 cursor-pointer transition-all border border-emerald-400 shadow-sm"
+                    >
+                      🔄 Forcesync
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
             
             {/* 4 BENTO ANALYTICS CARDS */}
             <section id="bento-grid" className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -723,7 +1040,59 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
 
         {/* 3. MANAGE UNIT ROOMS TAB */}
         {activeTab === "rooms" && (
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+          <div className="space-y-6 animate-in fade-in duration-300">
+            {/* Custom Luxurious Page Header */}
+            <div className="bg-slate-900 rounded-3xl p-6 sm:p-8 text-white relative overflow-hidden border border-slate-800 shadow-xl">
+              <div className="absolute top-0 right-0 w-96 h-96 bg-blue-500/10 rounded-full blur-3xl pointer-events-none"></div>
+              
+              <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6 relative z-10">
+                <div className="space-y-2 text-left">
+                  <div className="inline-flex items-center gap-2 px-3 py-1 bg-blue-500/15 rounded-full border border-blue-500/20 text-blue-400 font-mono text-[10px] font-bold uppercase tracking-wider">
+                    <span className="w-1.5 h-1.5 bg-blue-400 rounded-full"></span>
+                    Vacancy Inventory Control
+                  </div>
+                  <h2 className="text-2xl font-extrabold font-display tracking-tight text-white">
+                    Unit Rooms Floor Space
+                  </h2>
+                  <p className="text-slate-400 text-xs max-w-xl leading-relaxed">
+                    Configure room dimensions, monthly rents, and flat utility rates for individual rentable apartments inside {activeBrandName}.
+                  </p>
+                </div>
+                
+                <div className="flex flex-wrap items-center gap-3">
+                  <div className="flex gap-2">
+                    <div className="p-2.5 bg-slate-800/80 backdrop-blur-xs rounded-xl border border-slate-700/50 text-center">
+                      <span className="text-[8px] uppercase font-bold text-slate-400 block mb-0.5">Total</span>
+                      <div className="font-mono text-xs font-black text-white">{rooms.length} Units</div>
+                    </div>
+                    <div className="p-2.5 bg-slate-800/80 backdrop-blur-xs rounded-xl border border-slate-700/50 text-center">
+                      <span className="text-[8px] uppercase font-bold text-slate-400 block mb-0.5">Vacant</span>
+                      <div className="font-mono text-xs font-black text-emerald-400">{rooms.filter(r => r.status === "Vacant").length} Rooms</div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setActiveTab("clock")}
+                      className="px-3 py-2 bg-slate-805 hover:bg-slate-750 text-white font-mono text-xs rounded-xl border border-slate-700 flex items-center gap-2 transition-all cursor-pointer shadow-sm"
+                      title="Click to view full System clock sync logs"
+                    >
+                      <Clock className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
+                      <span>{currentTime.toLocaleTimeString()}</span>
+                    </button>
+
+                    <button
+                      onClick={fetchPropertySpecifics}
+                      className="px-3.5 py-2 bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-mono text-xs rounded-xl font-bold flex items-center gap-1 cursor-pointer transition-all border border-emerald-400 shadow-sm"
+                    >
+                      🔄 Forcesync
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
             
             {/* ADD ROOM PANEL */}
             <div className="lg:col-span-4 bg-white p-5 shadow-xs text-left h-fit high-contrast-card">
@@ -824,6 +1193,7 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
                         <th className="p-3">Utility flat rate</th>
                         <th className="p-3">Total Monthly Rate</th>
                         <th className="p-3 text-center">Placement State</th>
+                        <th className="p-3 text-right">Action</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -840,6 +1210,15 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
                               {r.status}
                             </span>
                           </td>
+                          <td className="p-3 text-right">
+                            <button
+                              onClick={() => triggerDeleteFlow('room', r.room_number, `Room ${r.room_number}`, r.property_id)}
+                              className="p-1 px-2 text-rose-600 hover:bg-rose-50 rounded-lg transition-all cursor-pointer"
+                              title="Delete unit space permanently"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </td>
                         </tr>
                       ))}
                     </tbody>
@@ -849,11 +1228,58 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
             </div>
 
           </div>
-        )}
+        </div>
+      )}
 
         {/* 4. PLACEMENT REGISTER USER TAB */}
         {activeTab === "tenants" && (
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+          <div className="space-y-6 animate-in fade-in duration-300">
+            {/* Custom Luxurious Page Header */}
+            <div className="bg-slate-900 rounded-3xl p-6 sm:p-8 text-white relative overflow-hidden border border-slate-800 shadow-xl">
+              <div className="absolute top-0 right-0 w-96 h-96 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none"></div>
+              
+              <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6 relative z-10">
+                <div className="space-y-2 text-left">
+                  <div className="inline-flex items-center gap-2 px-3 py-1 bg-indigo-500/15 rounded-full border border-indigo-500/20 text-indigo-400 font-mono text-[10px] font-bold uppercase tracking-wider">
+                    <span className="w-1.5 h-1.5 bg-indigo-400 rounded-full"></span>
+                    Tenant Lease Canopy
+                  </div>
+                  <h2 className="text-2xl font-extrabold font-display tracking-tight text-white">
+                    Tenancy Placement & Residents
+                  </h2>
+                  <p className="text-slate-400 text-xs max-w-xl leading-relaxed">
+                    Allocate vacant rooms to incoming occupants in {activeBrandName}. Configure Safaricom phone contacts, set custom billing anniversaries, and manage active leases.
+                  </p>
+                </div>
+                
+                <div className="flex flex-wrap items-center gap-3">
+                  <div className="p-3 bg-slate-850 opacity-95 rounded-xl border border-slate-700/50 text-center min-w-[125px]">
+                    <span className="text-[9px] uppercase font-bold text-slate-400 tracking-wider block mb-0.5">Lease Directory</span>
+                    <div className="font-mono text-xs font-bold text-indigo-400">{tenants.length} Residents Placed</div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setActiveTab("clock")}
+                      className="px-3 py-2 bg-slate-850 hover:bg-slate-755 text-white font-mono text-xs rounded-xl border border-slate-700 flex items-center gap-2 transition-all cursor-pointer shadow-sm"
+                      title="Click to view full System clock sync logs"
+                    >
+                      <Clock className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
+                      <span>{currentTime.toLocaleTimeString()}</span>
+                    </button>
+
+                    <button
+                      onClick={fetchPropertySpecifics}
+                      className="px-3.5 py-2 bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-mono text-xs rounded-xl font-bold flex items-center gap-1 cursor-pointer transition-all border border-emerald-400 shadow-sm"
+                    >
+                      🔄 Forcesync
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
             
             {/* NEW TENANT REGISTER WITH ALLOCATION GUARD */}
             <div className="lg:col-span-4 bg-white p-5 shadow-xs text-left h-fit high-contrast-card">
@@ -1012,7 +1438,7 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
                             ) : (
                               <button
                                 id={`evict-tenant-${t.tenant_id}`}
-                                onClick={() => handleEvictTenant(t.tenant_id)}
+                                onClick={() => triggerDeleteFlow('tenant', t.tenant_id, t.full_name)}
                                 className="p-1.5 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg transition-all ml-auto block flex items-center justify-center cursor-pointer"
                                 title="Terminate tenancy lease & reset room status to Vacant"
                               >
@@ -1029,11 +1455,58 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
             </div>
 
           </div>
-        )}
+        </div>
+      )}
 
         {/* 5. PAYMENTS LEDGER TAB */}
         {activeTab === "payments" && (
-          <div className="bg-white p-5 shadow-xs text-left high-contrast-card">
+          <div className="space-y-6 animate-in fade-in duration-300">
+            {/* Custom Luxurious Page Header */}
+            <div className="bg-slate-900 rounded-3xl p-6 sm:p-8 text-white relative overflow-hidden border border-slate-800 shadow-xl">
+              <div className="absolute top-0 right-0 w-96 h-96 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none"></div>
+              
+              <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6 relative z-10">
+                <div className="space-y-2 text-left">
+                  <div className="inline-flex items-center gap-2 px-3 py-1 bg-emerald-500/15 rounded-full border border-emerald-500/20 text-emerald-400 font-mono text-[10px] font-bold uppercase tracking-wider">
+                    <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-ping"></span>
+                    Double-Entry Revenue Ledger
+                  </div>
+                  <h2 className="text-2xl font-extrabold font-display tracking-tight text-white">
+                    Payments & M-Pesa Receipts Ledger
+                  </h2>
+                  <p className="text-slate-400 text-xs max-w-xl leading-relaxed">
+                    View verified Safaricom Lipa Na M-Pesa automatic STK Push payments, physical cash clearances, and track transaction references under {activeBrandName}.
+                  </p>
+                </div>
+                
+                <div className="flex flex-wrap items-center gap-3">
+                  <div className="p-3 bg-slate-800/80 backdrop-blur-xs rounded-xl border border-slate-700/50 text-center min-w-[125px]">
+                    <span className="text-[9px] uppercase font-bold text-slate-400 tracking-wider block mb-0.5">Total Collected</span>
+                    <div className="font-mono text-xs font-bold text-emerald-400">KES {totalClearedInPlot.toLocaleString()}</div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setActiveTab("clock")}
+                      className="px-3 py-2 bg-slate-850 hover:bg-slate-750 text-white font-mono text-xs rounded-xl border border-slate-700 flex items-center gap-2 transition-all cursor-pointer shadow-sm hover:border-emerald-500/45"
+                      title="Click to view full System clock sync logs"
+                    >
+                      <Clock className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
+                      <span>{currentTime.toLocaleTimeString()}</span>
+                    </button>
+
+                    <button
+                      onClick={fetchPropertySpecifics}
+                      className="px-3.5 py-2 bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-mono text-xs rounded-xl font-bold flex items-center gap-1 cursor-pointer transition-all border border-emerald-400 shadow-sm"
+                    >
+                      🔄 Forcesync
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-white p-5 shadow-xs text-left high-contrast-card">
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-bold text-sm text-slate-900 font-display">
                 📋 Confirmed Payments ledger ({payments.length})
@@ -1056,6 +1529,7 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
                       <th className="p-3">Payment Mode</th>
                       <th className="p-3 text-right">Validated Amount (KES)</th>
                       <th className="p-3 text-right">Completion Time</th>
+                      <th className="p-3 text-right">Action</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1075,6 +1549,15 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
                           </td>
                           <td className="p-3 text-right font-mono font-bold text-slate-900 text-sm">{p.amount.toLocaleString()} KES</td>
                           <td className="p-3 text-right text-slate-400 font-medium">{new Date(p.timestamp).toLocaleString("en-KE")}</td>
+                          <td className="p-3 text-right font-mono">
+                            <button
+                              onClick={() => triggerDeleteFlow('payment', p.transaction_id, `Receipt ${p.transaction_id.substring(0, 10)}... (KES ${p.amount})`)}
+                              className="p-1 px-2 text-rose-600 hover:bg-rose-50 rounded-lg transition-all cursor-pointer"
+                              title="Delete payment record from ledger"
+                            >
+                              <Trash2 className="w-3.5 h-3.5 animate-none" />
+                            </button>
+                          </td>
                         </tr>
                       );
                     })}
@@ -1083,11 +1566,58 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
               </div>
             )}
           </div>
-        )}
+        </div>
+      )}
 
         {/* 6. MAINTENANCE TICKETS TAB */}
         {activeTab === "maintenance" && (
-          <div className="bg-white p-5 shadow-xs text-left high-contrast-card">
+          <div className="space-y-6 animate-in fade-in duration-300">
+            {/* Custom Luxurious Page Header */}
+            <div className="bg-slate-900 rounded-3xl p-6 sm:p-8 text-white relative overflow-hidden border border-slate-800 shadow-xl">
+              <div className="absolute top-0 right-0 w-96 h-96 bg-amber-500/10 rounded-full blur-3xl pointer-events-none"></div>
+              
+              <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6 relative z-10">
+                <div className="space-y-2 text-left">
+                  <div className="inline-flex items-center gap-2 px-3 py-1 bg-amber-500/15 rounded-full border border-amber-500/20 text-amber-400 font-mono text-[10px] font-bold uppercase tracking-wider">
+                    <span className="w-1.5 h-1.5 bg-amber-400 rounded-full opacity-75"></span>
+                    CareTaker Repair Desk
+                  </div>
+                  <h2 className="text-2xl font-extrabold font-display tracking-tight text-white">
+                    Maintenance & Support Tickets
+                  </h2>
+                  <p className="text-slate-400 text-xs max-w-xl leading-relaxed">
+                    Review and update breakages, light leaks, painting requests, or plumbing failures submitted by current occupants in {activeBrandName}.
+                  </p>
+                </div>
+                
+                <div className="flex flex-wrap items-center gap-3">
+                  <div className="p-3 bg-slate-800/80 backdrop-blur-xs rounded-xl border border-slate-700/50 text-center min-w-[125px]">
+                    <span className="text-[9px] uppercase font-bold text-slate-400 tracking-wider block mb-0.5">Urgent Resolved</span>
+                    <div className="font-mono text-xs font-bold text-amber-400">{pendingTicketsCount} Pending Repair Logs</div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setActiveTab("clock")}
+                      className="px-3 py-2 bg-slate-805 hover:bg-slate-755 text-white font-mono text-xs rounded-xl border border-slate-700 flex items-center gap-2 transition-all cursor-pointer shadow-sm"
+                      title="Click to view full System clock sync logs"
+                    >
+                      <Clock className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
+                      <span>{currentTime.toLocaleTimeString()}</span>
+                    </button>
+
+                    <button
+                      onClick={fetchPropertySpecifics}
+                      className="px-3.5 py-2 bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-mono text-xs rounded-xl font-bold flex items-center gap-1 cursor-pointer transition-all border border-emerald-400 shadow-sm"
+                    >
+                      🔄 Forcesync
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-white p-5 shadow-xs text-left high-contrast-card">
             <h3 className="font-bold text-sm text-slate-900 font-display mb-4">
               🛠️ Repair requests Filed under {activeBrandName} ({maintenance.length})
             </h3>
@@ -1160,6 +1690,13 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
                           >
                             Resolve
                           </button>
+                          <button
+                            onClick={() => triggerDeleteFlow('maintenance', t.ticket_id, `${t.issue_type} Report`)}
+                            className="p-1 px-1.5 ml-1 bg-rose-50 hover:bg-rose-100 text-rose-650 rounded-lg transition-all cursor-pointer"
+                            title="Purge repair log permanently from records"
+                          >
+                            <Trash2 className="w-3 h-3 text-rose-500" />
+                          </button>
                         </div>
                       </div>
                     </div>
@@ -1168,11 +1705,58 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
               </div>
             )}
           </div>
-        )}
+        </div>
+      )}
 
         {/* 7. REGISTER NEW PLOT PROPERTY TAB (Super-Admin only) */}
         {activeTab === "properties" && !isCaretaker && (
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 text-left">
+          <div className="space-y-6 animate-in fade-in duration-300">
+            {/* Custom Luxurious Page Header */}
+            <div className="bg-slate-900 rounded-3xl p-6 sm:p-8 text-white relative overflow-hidden border border-slate-800 shadow-xl">
+              <div className="absolute top-0 right-0 w-96 h-96 bg-cyan-500/10 rounded-full blur-3xl pointer-events-none"></div>
+              
+              <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6 relative z-10">
+                <div className="space-y-2 text-left">
+                  <div className="inline-flex items-center gap-2 px-3 py-1 bg-cyan-500/15 rounded-full border border-cyan-500/20 text-cyan-400 font-mono text-[10px] font-bold uppercase tracking-wider">
+                    <span className="w-1.5 h-1.5 bg-cyan-400 rounded-full"></span>
+                    Super-Admin Canopy
+                  </div>
+                  <h2 className="text-2xl font-extrabold font-display tracking-tight text-white">
+                    Register Plot Property Hub
+                  </h2>
+                  <p className="text-slate-400 text-xs max-w-xl leading-relaxed">
+                    System portfolio management. Onboard custom apartment lots, register geographic town locations, and cascade-delete entire plots.
+                  </p>
+                </div>
+                
+                <div className="flex flex-wrap items-center gap-3">
+                  <div className="p-3 bg-slate-800/80 backdrop-blur-xs rounded-xl border border-slate-700/50 text-center min-w-[125px]">
+                    <span className="text-[9px] uppercase font-bold text-slate-400 tracking-wider block mb-0.5">Database Canvas</span>
+                    <div className="font-mono text-xs font-bold text-cyan-400">{properties.length} Plots</div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setActiveTab("clock")}
+                      className="px-3 py-2 bg-slate-855 hover:bg-slate-750 text-white font-mono text-xs rounded-xl border border-slate-700 flex items-center gap-2 transition-all cursor-pointer shadow-sm hover:border-emerald-500/45"
+                      title="Click to view full System clock sync logs"
+                    >
+                      <Clock className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
+                      <span>{currentTime.toLocaleTimeString()}</span>
+                    </button>
+
+                    <button
+                      onClick={fetchPropertySpecifics}
+                      className="px-3.5 py-2 bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-mono text-xs rounded-xl font-bold flex items-center gap-1 cursor-pointer transition-all border border-emerald-400 shadow-sm"
+                    >
+                      🔄 Forcesync
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 text-left">
             
             {/* ADD ESTATE CARD */}
             <div className="lg:col-span-5 bg-white p-6 shadow-xs high-contrast-card">
@@ -1233,19 +1817,79 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
 
               <div id="plot-list-grid" className="space-y-3">
                 {properties.map((p) => (
-                  <div key={p.property_id} className="p-4 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between">
-                    <div className="text-left">
-                      <h4 className="text-xs font-bold text-slate-800 font-display">{p.property_name}</h4>
-                      <p className="text-[10px] text-slate-450 mt-1 flex items-center gap-1 font-medium">
-                        <MapPin className="w-3.5 h-3.5" />
-                        <span>{p.geographic_location}</span>
-                      </p>
-                    </div>
-                    <div className="text-right flex items-center gap-3">
-                      <div className="text-right">
-                        <span className="text-[10px] text-slate-400 uppercase font-bold block">Units Created</span>
-                        <span className="font-mono text-xs font-bold text-slate-800">{p.total_units} Active Rooms</span>
+                  <div key={p.property_id} className="p-4 bg-slate-50 border border-slate-200 rounded-xl flex flex-col gap-3">
+                    <div className="flex items-start justify-between">
+                      <div className="text-left">
+                        <h4 className="text-xs font-bold text-slate-800 font-display">{p.property_name}</h4>
+                        <p className="text-[10px] text-slate-450 mt-1 flex items-center gap-1 font-medium">
+                          <MapPin className="w-3.5 h-3.5 text-emerald-500" />
+                          <span>{p.geographic_location}</span>
+                        </p>
                       </div>
+                      <div className="text-right flex items-center gap-3">
+                        <div className="text-right">
+                          <span className="text-[10px] text-slate-400 uppercase font-bold block">Units Created</span>
+                          <span className="font-mono text-xs font-bold text-slate-800">{p.total_units} Active Rooms</span>
+                        </div>
+                        <button
+                          onClick={() => triggerDeleteFlow('property', p.property_id, p.property_name)}
+                          className="p-1.5 px-2 bg-rose-50 text-rose-600 hover:bg-rose-100 rounded-lg transition-all cursor-pointer"
+                          title="Delete entire plot along with rooms, tickets and ledger logs!"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Caretaker Assignment Option */}
+                    <div className="pt-2.5 border-t border-slate-200/50 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                      <div className="flex items-center gap-1.5 text-[10px] font-medium text-slate-500">
+                        <User className="w-3.5 h-3.5 text-slate-400" />
+                        <span>Caretaker Email:</span>
+                        {p.caretaker_email ? (
+                          <span className="font-mono font-bold text-emerald-700 bg-emerald-50 border border-emerald-100 px-1.5 py-0.5 rounded text-[10px]">
+                            {p.caretaker_email}
+                          </span>
+                        ) : (
+                          <span className="text-slate-400 italic">None (Demo Access Only)</span>
+                        )}
+                      </div>
+
+                      {!isCaretaker ? (
+                        <div className="flex items-center gap-1">
+                          <input
+                            type="email"
+                            placeholder="Assign Google email..."
+                            defaultValue={p.caretaker_email || ""}
+                            onBlur={async (e) => {
+                              const email = e.target.value.toLowerCase().trim();
+                              if (email !== (p.caretaker_email || "")) {
+                                try {
+                                  const response = await fetch(`/api/properties/${p.property_id}/caretaker`, {
+                                    method: "PUT",
+                                    headers: { "Content-Type": "application/json" },
+                                    body: JSON.stringify({ caretaker_email: email })
+                                  });
+                                  if (response.ok) {
+                                    onRefreshProperties();
+                                  } else {
+                                    alert("Could not update caretaker email assignment.");
+                                  }
+                                } catch (err) {
+                                  console.error("Caretaker save error:", err);
+                                  alert("Error communicating with servers.");
+                                }
+                              }
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") {
+                                (e.target as HTMLInputElement).blur();
+                              }
+                            }}
+                            className="bg-white border border-slate-200 rounded-lg py-1 px-2 text-[10px] w-48 font-mono focus:outline-none focus:ring-1 focus:ring-slate-800"
+                          />
+                        </div>
+                      ) : null}
                     </div>
                   </div>
                 ))}
@@ -1253,9 +1897,370 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
             </div>
 
           </div>
+        </div>
+      )}
+
+        {/* 7.5. CARETAKERS DIRECT ONBOARDING & MANAGEMENT PANEL */}
+        {activeTab === "caretakers" && !isCaretaker && (
+          <div className="space-y-6 text-left animate-in fade-in duration-300">
+            {/* Header */}
+            <div className="bg-slate-900 rounded-3xl p-6 sm:p-8 text-white relative overflow-hidden border border-slate-800 shadow-xl">
+              <div className="absolute top-0 right-0 w-96 h-96 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none"></div>
+              <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div>
+                  <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-500/15 rounded-full border border-emerald-500/20 text-emerald-400 font-mono text-[10px] font-bold uppercase tracking-wider mb-2">
+                    <Shield className="w-3.5 h-3.5 text-emerald-400" />
+                    Security & Staff Administration
+                  </div>
+                  <h2 className="text-xl font-extrabold font-display tracking-tight text-white">
+                    Onboard & Manage Caretakers
+                  </h2>
+                  <p className="text-slate-400 text-xs mt-1 max-w-2xl leading-relaxed">
+                    Register and validate caretaker email handlers. The system generates high-security uppercase alphanumeric PINs mixed with words and numbers for manual auth, and verifies their premises apartments instantly against the active units catalog.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+              {/* Form panel Column */}
+              <div className="lg:col-span-5 bg-white p-6 shadow-xs high-contrast-card flex flex-col justify-between">
+                <div>
+                  <h3 className="font-bold text-sm text-slate-900 font-display mb-1">
+                    👥 Register On-Site Assistant
+                  </h3>
+                  <p className="text-[11px] text-slate-400 mb-4 leading-relaxed">
+                    Set up direct login permissions through email verification or custom generated PINs.
+                  </p>
+
+                  <form onSubmit={handleRegisterCaretaker} className="space-y-4">
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Assistant Full Name</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. Kelvin Kiprop"
+                        value={newCaretakerName}
+                        onChange={(e) => setNewCaretakerName(e.target.value)}
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs focus:outline-none focus:ring-2 focus:ring-slate-800 font-semibold text-slate-800"
+                        required
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Caretaker Email (Google Login Validation)</label>
+                      <input
+                        type="email"
+                        placeholder="e.g. kelvin.kiprop@example.com"
+                        value={newCaretakerEmail}
+                        onChange={(e) => setNewCaretakerEmail(e.target.value)}
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-slate-800 text-slate-800"
+                        required
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1 font-sans">Assigned Managed Building Plot</label>
+                      <select
+                        value={newCaretakerPropId}
+                        onChange={(e) => setNewCaretakerPropId(e.target.value)}
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs focus:outline-none focus:ring-2 focus:ring-slate-800 text-slate-800 appearance-none bg-[url('data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%23a0aec0%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.2-5.5-12.8z%22%2F%3E%3C%2Fsvg%3E')] bg-[length:0.65rem_auto] bg-[right_1rem_center] bg-no-repeat"
+                        required
+                      >
+                        <option value="">-- Choose Assigned Building --</option>
+                        {properties.map((p) => (
+                          <option key={p.property_id} value={p.property_id}>
+                            🏢 {p.property_name} ({p.geographic_location})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Resident Staff Room (Optional)</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. 101 or A2 (Checked against DB)"
+                        value={newCaretakerRoom}
+                        onChange={(e) => setNewCaretakerRoom(e.target.value)}
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs uppercase font-mono focus:outline-none focus:ring-2 focus:ring-slate-800 text-slate-800"
+                      />
+                      <span className="text-[10px] text-slate-400 mt-1 block leading-relaxed">Specify if they live on-site to validate their room in the database.</span>
+                    </div>
+
+                    {caretakerError && (
+                      <div className="p-3 bg-rose-50 text-rose-700 text-xs font-semibold rounded-xl flex items-center gap-2 border border-rose-100">
+                        <AlertCircle className="w-4 h-4 shrink-0" />
+                        <span>{caretakerError}</span>
+                      </div>
+                    )}
+
+                    {caretakerSuccess && (
+                      <div className="p-4 bg-emerald-50/50 text-slate-800 text-xs rounded-xl flex flex-col gap-2 border border-emerald-100">
+                        <div className="flex items-center gap-2 text-emerald-700 font-bold">
+                          <CheckCircle className="w-4.5 h-4.5 shrink-0" />
+                          <span>Staff Onboarded Successfully!</span>
+                        </div>
+                        <p className="text-[11px] text-slate-600 leading-relaxed font-semibold">
+                          {caretakerSuccess}
+                        </p>
+                      </div>
+                    )}
+
+                    <button
+                      type="submit"
+                      disabled={isSavingCaretaker}
+                      className="w-full py-2.5 bg-slate-900 hover:bg-slate-800 disabled:bg-slate-400 text-white font-bold text-xs uppercase rounded-xl transition-all cursor-pointer flex items-center justify-center gap-2"
+                    >
+                      <span>{isSavingCaretaker ? "Authenticating Premises..." : "Validate & Onboard Admin"}</span>
+                      <Sparkles className="w-4.5 h-4.5 text-emerald-400" />
+                    </button>
+                  </form>
+                </div>
+              </div>
+
+              {/* List Directory Panel Column */}
+              <div className="lg:col-span-7 bg-white p-6 shadow-xs high-contrast-card flex flex-col">
+                <div className="flex items-center justify-between mb-4">
+                  <div>
+                    <h3 className="font-bold text-sm text-slate-900 font-display">
+                      🔑 Active Caretakers Directories
+                    </h3>
+                    <p className="text-[11px] text-slate-400 mt-0.5 font-semibold">
+                      View generated PINs and manage system privileges for on-site managers.
+                    </p>
+                  </div>
+                  <span className="p-1 px-2.5 bg-slate-100 text-slate-700 font-mono text-[10px] font-bold rounded-lg border border-slate-200 shrink-0">
+                    {caretakersList.length} Active Staff
+                  </span>
+                </div>
+
+                {caretakersList.length === 0 ? (
+                  <div className="py-12 text-center bg-slate-50 border border-dashed border-slate-250 rounded-3xl flex-grow flex flex-col justify-center items-center">
+                    <User className="w-10 h-10 text-slate-350 mb-2 animate-bounce" />
+                    <p className="text-xs text-slate-450 italic font-semibold">No registered caretakers yet. Fill the onboarding form to grant credentials!</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3 max-h-[500px] overflow-y-auto pr-1">
+                    {caretakersList.map((c: any) => {
+                      const managedPropObj = properties.find(p => p.property_id === c.property_id);
+                      const managedPropName = managedPropObj ? managedPropObj.property_name : "Plot Access";
+                      return (
+                        <div key={c.caretaker_id} className="p-4 bg-slate-50 border border-slate-200 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                          <div className="text-left space-y-1">
+                            <span className="text-[9px] uppercase tracking-wider text-slate-400 font-bold block">Assigned Staff</span>
+                            <h4 className="text-xs font-bold text-slate-800">{c.name}</h4>
+                            <p className="text-xs font-mono text-slate-500">{c.email}</p>
+                            <div className="pt-2 flex flex-wrap gap-2">
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-100 font-mono text-[9px] font-bold rounded">
+                                🏢 {managedPropName}
+                              </span>
+                              {c.room_number ? (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-indigo-50 text-indigo-700 border border-indigo-100 font-mono text-[9px] font-bold rounded">
+                                  🔑 Resides Room {c.room_number}
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-slate-200/50 text-slate-600 border border-slate-200 font-mono text-[9px] font-bold rounded">
+                                  💼 External Supervisor
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="flex sm:flex-col items-end gap-2.5 shrink-0 justify-between sm:justify-start border-t sm:border-t-0 pt-2 sm:pt-0 border-slate-200/60">
+                            <div className="text-left sm:text-right">
+                              <span className="text-[9px] uppercase font-bold text-slate-400 block mb-0.5">Authorization PIN</span>
+                              <span className="p-1.5 px-3 bg-slate-200 text-slate-950 border border-slate-300 font-mono text-xs font-bold rounded-lg tracking-widest leading-none select-all block text-center font-bold">
+                                {c.pin}
+                              </span>
+                            </div>
+                            <button
+                              onClick={() => handleDeleteCaretaker(c.caretaker_id)}
+                              className="p-1.5 px-3 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-lg text-[10px] font-bold transition-all flex items-center gap-1 border border-rose-100 cursor-pointer"
+                              title="Revoke management pass"
+                            >
+                              <Trash2 className="w-3.5 h-3.5 text-rose-500" />
+                              <span>Revoke</span>
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* 8. SYSTEM SYNC CLOCK AUDITOR TAB */}
+        {activeTab === "clock" && (
+          <div className="space-y-6 text-left">
+            <div className="bg-slate-900 rounded-3xl p-6 sm:p-8 text-white relative overflow-hidden border border-slate-800 shadow-xl">
+              <div className="absolute top-0 right-0 w-96 h-96 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none"></div>
+              
+              <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6 relative z-10">
+                <div className="space-y-2">
+                  <div className="inline-flex items-center gap-2 px-3 py-1 bg-emerald-500/15 rounded-full border border-emerald-500/20 text-emerald-400 font-mono text-[10px] font-bold uppercase tracking-wider">
+                    <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-ping"></span>
+                    Live Network Synchronization Online
+                  </div>
+                  <h2 className="text-2xl font-extrabold font-display tracking-tight text-white">
+                    Primary Server Clock Sync Auditor
+                  </h2>
+                  <p className="text-slate-400 text-xs max-w-xl leading-relaxed">
+                    This control panel keeps a strict diagnostic track of structural updates, periodic database polling ticks, and Lipa Na M-Pesa STK Callback handlers.
+                  </p>
+                </div>
+                
+                {/* Massive Premium Clock View */}
+                <div className="p-4 bg-slate-800/80 backdrop-blur-xs rounded-2xl border border-slate-700/50 text-center min-w-[200px]">
+                  <span className="text-[10px] uppercase font-bold text-slate-400 tracking-widest block mb-1">Standard GMT+3 UTC</span>
+                  <div className="font-mono text-2xl font-black text-emerald-400 tracking-wider">
+                    {currentTime.toLocaleTimeString()}
+                  </div>
+                  <span className="text-[9px] text-slate-500 font-mono block mt-1.5">Epoch: {currentTime.getTime()}</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+              {/* Sync Diagnostic Log Console */}
+              <div className="lg:col-span-8 bg-white border border-slate-200 rounded-3xl p-6 shadow-xs high-contrast-card flex flex-col justify-between">
+                <div>
+                  <h3 className="font-bold text-sm text-slate-900 font-display flex items-center gap-2 mb-2">
+                    <Clock className="w-5 h-5 text-emerald-500" />
+                    <span>Live Audit Heartbeat Logs</span>
+                  </h3>
+                  <p className="text-xs text-slate-500 mb-4 font-sans">
+                    Active trace history of synchronized properties under the landlord canopy. Updated automatically every 5000ms.
+                  </p>
+
+                  <div className="bg-slate-950 p-4 rounded-xl font-mono text-[11px] text-slate-350 overflow-y-auto space-y-1.5 max-h-[320px] border border-slate-800 shadow-inner">
+                    {syncLogs.length === 0 ? (
+                      <p className="text-slate-500 italic">No heartbeat traces logged yet.</p>
+                    ) : (
+                      syncLogs.map((log, i) => (
+                        <div key={i} className="flex gap-2">
+                          <span className="text-emerald-500 select-none">&gt;</span>
+                          <span className={log.includes("Purged") || log.includes("Deleted") ? "text-rose-400" : ""}>{log}</span>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+                
+                <div className="pt-4 border-t border-slate-100 flex items-center justify-between text-xs text-slate-450 mt-4 leading-relaxed">
+                  <span>Heartbeat Interval: <strong>5000ms REST polling</strong></span>
+                  <span>Database State: <strong className="text-emerald-600">Sync Correct</strong></span>
+                </div>
+              </div>
+
+              {/* Master Platform Terms & Conditions Agreement */}
+              <div className="lg:col-span-4 bg-white border border-slate-200 rounded-3xl p-6 shadow-xs high-contrast-card">
+                <h3 className="font-extrabold text-sm text-slate-900 font-display mb-3">
+                  📜 System Terms of Service
+                </h3>
+                <p className="text-xs text-slate-500 mb-4 leading-relaxed">
+                  Please review the active landlord operations terms bound to this M-Pesa automated billing application:
+                </p>
+
+                <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 text-[11px] leading-relaxed text-slate-605 space-y-3 h-56 overflow-y-auto">
+                  <p>
+                    <strong>1. Direct Deletions Scope:</strong> Every deletion action performed on plot buildings, room spaces, or active tenant leases will execute standard cascade rules to remove nested logs.
+                  </p>
+                  <p>
+                    <strong>2. Safaricom M-Pesa Sandboxing:</strong> Safaricom STK Push trigger handshakes on Lipa Na M-Pesa channels execute instantly. Simulators will report simulated payments onto backend callback listeners.
+                  </p>
+                  <p>
+                    <strong>3. Data Authorization:</strong> Collins (collinskosgei32@gmail.com) is designated as the primary authorized platform super-administrator with root privileges to terminate leases, clear tenants, and register/delete Plots.
+                  </p>
+                  <p>
+                    <strong>4. Caretaker Limitations:</strong> Caretakers or caretewives have read-only access strictly fenced to their assigned property. Deletion actions are strictly disabled for role profiles other than Super-Admin.
+                  </p>
+                </div>
+
+                <div className="mt-4 p-3 bg-emerald-50 border border-emerald-150 rounded-xl text-emerald-800 text-[10px] font-semibold leading-relaxed flex items-start gap-2">
+                  <CheckCircle className="w-4 h-4 shrink-0 text-emerald-500 mt-0.5" />
+                  <span>Your active session is fully licensed and compliant with standard Safaricom Developer Terms of Service in Kenya.</span>
+                </div>
+              </div>
+            </div>
+          </div>
         )}
 
       </main>
+
+      {/* DELETION AUTHORIZATION OVERLAY MODAL */}
+      {deleteModalOpen && deleteTarget && (
+        <div className="fixed inset-0 z-50 overflow-y-auto flex items-center justify-center p-4 bg-slate-900/65 backdrop-blur-xs transition-opacity duration-300">
+          <div className="bg-white rounded-2xl w-full max-w-md p-6 shadow-2xl border border-slate-100 text-left animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-start gap-3.5 mb-4">
+              <div className="p-2 sm:p-2.5 bg-rose-50 text-rose-600 rounded-xl inline-flex">
+                <AlertCircle className="w-6 h-6 stroke-[2.25]" />
+              </div>
+              <div className="text-left">
+                <h3 className="text-sm font-black font-display text-slate-900">
+                  Durable DB Deletion Authorization
+                </h3>
+                <p className="text-[10px] font-mono text-rose-500 mt-1 uppercase tracking-tight font-black">
+                  Cascading Purge Security Gate
+                </p>
+              </div>
+            </div>
+
+            <div className="p-3.5 bg-slate-50 border border-slate-200/60 rounded-xl text-left mb-4 space-y-1.5 leading-relaxed">
+              <span className="text-[10px] text-slate-400 uppercase font-black tracking-wider block">Purge Scope Metadata</span>
+              <p className="text-xs text-slate-800">
+                You are requested to execute a permanent <strong className="text-rose-650 font-extrabold uppercase">{deleteTarget.type}</strong> wipeout from the primary storage ledger.
+              </p>
+              <div className="p-2.5 bg-slate-100/80 rounded border border-slate-200 font-mono text-[11px] text-slate-800 break-all space-y-0.5">
+                <div>🔑 Identifier: <span className="font-bold text-slate-950">{deleteTarget.id}</span></div>
+                <div>👤 Label: <span className="font-bold text-slate-950">{deleteTarget.displayLabel}</span></div>
+                {deleteTarget.extraId && (
+                  <div>💼 Binder Scope: <span className="font-bold text-slate-950">{deleteTarget.extraId}</span></div>
+                )}
+              </div>
+            </div>
+
+            <div className="space-y-3 mb-5">
+              <div className="flex items-start gap-2 text-xs">
+                <input
+                  type="checkbox"
+                  id="accept-terms-check"
+                  checked={termsAccepted}
+                  onChange={(e) => setTermsAccepted(e.target.checked)}
+                  className="mt-0.5 w-4 h-4 rounded text-rose-600 border-slate-350 focus:ring-rose-500 cursor-pointer"
+                />
+                <label htmlFor="accept-terms-check" className="text-slate-650 font-medium leading-relaxed select-none cursor-pointer text-left">
+                  I acknowledge that I amCollins, Super-Admin for this platform, and I accept the terms and conditions of deleting this live testing data permanently. I consent that this cascade purge is final and cannot be rolled back.
+                </label>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setDeleteModalOpen(false);
+                  setDeleteTarget(null);
+                  setTermsAccepted(false);
+                }}
+                className="flex-1 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs uppercase rounded-xl transition-all cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={!termsAccepted || isDeleting}
+                onClick={executeDeletion}
+                className="flex-1 py-2 bg-rose-600 hover:bg-rose-700 disabled:bg-rose-200 text-white disabled:text-rose-450 font-black text-xs uppercase rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:cursor-not-allowed"
+              >
+                {isDeleting ? "Wiping Records..." : "Confirm Deletion ✓"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

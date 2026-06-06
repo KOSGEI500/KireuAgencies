@@ -9,25 +9,28 @@
 
 body {
   font-family: var(--font-sans);
-  background-color: #F8FAFC;
-  color: #0F172A;
+  background-color: #020617;
+  color: #F8FAFC;
+  touch-action: manipulation;
 }
 
 /* Clean Utility Custom Theme Support */
 .high-contrast-card {
-  background: #FFFFFF;
-  border: 1px solid #E2E8F0;
-  border-radius: 12px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  background: rgba(15, 23, 42, 0.65) !important;
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  border-radius: 16px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+  color: #F1F5F9 !important;
 }
 
 .mpesa-green {
-  background-color: #4CAF50;
+  background-color: #10B981;
   color: #FFFFFF;
 }
 
 .sidebar-active {
-  background-color: #1E293B;
+  background-color: #059669;
   color: #FFFFFF;
 }
 
@@ -42,3 +45,75 @@ body {
   justify-content: center;
 }
 
+/* Scoped high-fidelity dark glassmorphic overrides for the Admin Portal */
+#admin-portal-root {
+  color: #F1F5F9 !important;
+}
+
+#admin-portal-root .bg-slate-50,
+#admin-portal-root .bg-white {
+  background-color: rgba(15, 23, 42, 0.65) !important;
+  backdrop-filter: blur(12px) !important;
+  border-color: rgba(255, 255, 255, 0.1) !important;
+  color: #F1F5F9 !important;
+}
+
+#admin-portal-root .text-slate-900,
+#admin-portal-root .text-slate-800,
+#admin-portal-root .text-slate-700 {
+  color: #FFFFFF !important;
+}
+
+#admin-portal-root .text-slate-500,
+#admin-portal-root .text-slate-400,
+#admin-portal-root .text-slate-350 {
+  color: #CBD5E1 !important;
+}
+
+#admin-portal-root .border-slate-100,
+#admin-portal-root .border-slate-200 {
+  border-color: rgba(255, 255, 255, 0.1) !important;
+}
+
+#admin-portal-root select,
+#admin-portal-root input,
+#admin-portal-root textarea {
+  background-color: rgba(2, 6, 23, 0.6) !important;
+  border: 1px solid rgba(255, 255, 255, 0.15) !important;
+  color: #FFFFFF !important;
+}
+
+#admin-portal-root select option {
+  background-color: #0f172a !important;
+  color: #FFFFFF !important;
+}
+
+#admin-portal-root table thead tr {
+  background-color: rgba(2, 6, 23, 0.5) !important;
+  color: #E2E8F0 !important;
+}
+
+#admin-portal-root table tbody tr {
+  border-color: rgba(255, 255, 255, 0.05) !important;
+}
+
+#admin-portal-root table tbody tr:hover {
+  background-color: rgba(255, 255, 255, 0.05) !important;
+}
+
+#admin-portal-root .bg-slate-100,
+#admin-portal-root .bg-slate-50\/50,
+#admin-portal-root .bg-slate-50\/20 {
+  background-color: rgba(2, 6, 23, 0.3) !important;
+  border-color: rgba(255, 255, 255, 0.05) !important;
+}
+
+#admin-sidebar {
+  background-color: rgba(15, 23, 42, 0.8) !important;
+  backdrop-filter: blur(12px) !important;
+  border-color: rgba(255, 255, 255, 0.1) !important;
+}
+
+#admin-sidebar select {
+  background-color: rgba(2, 6, 23, 0.8) !important;
+}

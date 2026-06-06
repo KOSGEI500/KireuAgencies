@@ -1,0 +1,29 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Catch-all default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Secure identity helpers
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isEmailVerified() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    // Check if user has the specific Super-Admin email
+    function isSuperAdminEmail(email) {
+      return email.toLowerCase() == 'collinskosgei32@gmail.com';
+    }
+
+    // Secure match block for Super-Admins profile path
+    match /admins/{adminId} {
+      allow read: if isSignedIn() && isEmailVerified() && (request.auth.uid == adminId || isSuperAdminEmail(request.auth.token.email));
+      allow write: if false; // Restricted database entries
+    }
+  }
+}

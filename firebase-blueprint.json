@@ -1,0 +1,26 @@
+{
+  "entities": {
+    "AdminInfo": {
+      "title": "AdminInfo",
+      "description": "Secure record of authorized administrators",
+      "type": "object",
+      "properties": {
+        "email": {
+          "type": "string",
+          "description": "Email address of the super-admin"
+        },
+        "role": {
+          "type": "string",
+          "enum": ["Super-Admin"]
+        }
+      },
+      "required": ["email", "role"]
+    }
+  },
+  "firestore": {
+    "admins/{adminId}": {
+      "schema": "AdminInfo",
+      "description": "Super admin collection for secure verification"
+    }
+  }
+}

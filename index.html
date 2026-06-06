@@ -2,8 +2,52 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <title>My Google AI Studio App</title>
+    <script>
+      // Prevent multi-touch pinch to zoom on touchscreen devices
+      document.addEventListener('touchstart', function (event) {
+        if (event.touches.length > 1) {
+          event.preventDefault();
+        }
+      }, { passive: false });
+
+      document.addEventListener('touchmove', function (event) {
+        if (event.touches.length > 1) {
+          event.preventDefault();
+        }
+      }, { passive: false });
+
+      // Prevent iOS/Safari trackpad and browser-level pinch gestures
+      document.addEventListener('gesturestart', function (event) {
+        event.preventDefault();
+      });
+      document.addEventListener('gesturechange', function (event) {
+        event.preventDefault();
+      });
+
+      // Prevent Ctrl + Mouse Wheel zoom / trackpad pinch triggers
+      document.addEventListener('wheel', function (event) {
+        if (event.ctrlKey || event.metaKey) {
+          event.preventDefault();
+        }
+      }, { passive: false });
+
+      // Prevent key shortcuts (Ctrl +/- , Cmd +/- , Ctrl 0)
+      document.addEventListener('keydown', function (event) {
+        if (
+          (event.ctrlKey || event.metaKey) &&
+          (event.key === '=' ||
+            event.key === '-' ||
+            event.key === '0' ||
+            event.key === '+' ||
+            event.keyCode === 187 ||
+            event.keyCode === 189)
+        ) {
+          event.preventDefault();
+        }
+      });
+    </script>
   </head>
   <body>
     <div id="root"></div>

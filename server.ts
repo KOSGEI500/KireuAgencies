@@ -3,7 +3,7 @@ import path from "path";
 import fs from "fs";
 import { createServer as createViteServer } from "vite";
 import dotenv from "dotenv";
-import { Property, Room, Tenant, Payment, MaintenanceTicket } from "./src/types";
+import { Property, Room, Tenant, Payment, MaintenanceTicket, Caretaker } from "./src/types";
 
 dotenv.config();
 
@@ -20,6 +20,7 @@ interface DBModel {
   tenants: Tenant[];
   payments: Payment[];
   maintenance: MaintenanceTicket[];
+  caretakers?: Caretaker[];
 }
 
 // Initial seed data representing real plots/houses across Kenya
@@ -146,10 +147,14 @@ function readDB(): DBModel {
       return INITIAL_DB;
     }
     const raw = fs.readFileSync(DB_FILE, "utf-8");
-    return JSON.parse(raw);
+    const parsed = JSON.parse(raw) as DBModel;
+    if (!parsed.caretakers) {
+      parsed.caretakers = [];
+    }
+    return parsed;
   } catch (error) {
     console.error("DB reading error, fallback to memory", error);
-    return INITIAL_DB;
+    return { ...INITIAL_DB, caretakers: [] };
   }
 }
 
@@ -265,7 +270,7 @@ app.get("/api/properties", (req, res) => {
 
 app.post("/api/properties", (req, res) => {
   const db = readDB();
-  const { property_name, geographic_location } = req.body;
+  const { property_name, geographic_location, caretaker_email } = req.body;
   
   if (!property_name || !geographic_location) {
     return res.status(400).json({ error: "Property name and geographic location are required." });
@@ -275,12 +280,127 @@ app.post("/api/properties", (req, res) => {
     property_id: "prop_" + Date.now(),
     property_name,
     geographic_location,
-    total_units: 0
+    total_units: 0,
+    caretaker_email: caretaker_email && caretaker_email.trim() !== "" ? caretaker_email.trim().toLowerCase() : undefined
   };
 
   db.properties.push(newProperty);
   writeDB(db);
   res.json(newProperty);
+});
+
+app.put("/api/properties/:property_id/caretaker", (req, res) => {
+  const db = readDB();
+  const { property_id } = req.params;
+  const { caretaker_email } = req.body;
+
+  const property = db.properties.find((p) => p.property_id === property_id);
+  if (!property) {
+    return res.status(404).json({ error: "Property not found." });
+  }
+
+  if (caretaker_email && caretaker_email.trim() !== "") {
+    property.caretaker_email = caretaker_email.trim().toLowerCase();
+  } else {
+    delete property.caretaker_email;
+  }
+
+  writeDB(db);
+  res.json({ success: true, property });
+});
+
+// CARETAKERS DIRECT ONBOARDING ENDPOINTS
+app.get("/api/caretakers", (req, res) => {
+  const db = readDB();
+  const caretakers = db.caretakers || [];
+  res.json(caretakers);
+});
+
+app.post("/api/caretakers", (req, res) => {
+  const db = readDB();
+  db.caretakers = db.caretakers || [];
+
+  const { name, email, property_id, room_number } = req.body;
+
+  if (!name || !email || !property_id) {
+    return res.status(400).json({ error: "Name, email, and managed building plot are required." });
+  }
+
+  const cleanEmail = email.trim().toLowerCase();
+
+  const property = db.properties.find((p) => p.property_id === property_id);
+  if (!property) {
+    return res.status(404).json({ error: "Selected building plot does not exist." });
+  }
+
+  if (room_number && room_number.trim() !== "") {
+    const cleanRoom = room_number.trim().toLowerCase();
+    const roomExists = db.rooms.find(
+      (r) => r.property_id === property_id && r.room_number.toLowerCase() === cleanRoom
+    );
+    if (!roomExists) {
+      return res.status(400).json({
+        error: `Room '${room_number.trim()}' does not exist inside '${property.property_name}'. Please create the unit in the units database first.`
+      });
+    }
+  }
+
+  // Generate random pin mixed with words/letters and numbers in capital letters
+  function generatePinCode(): string {
+    const chars = "ABCDEFGHJKLMNOPQRSTUVWXYZ23456789"; // No confusing 0/O, 1/I/l
+    let result = "";
+    for (let i = 0; i < 6; i++) {
+      result += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return result;
+  }
+
+  const generatedPin = generatePinCode();
+
+  const newCaretaker: Caretaker = {
+    caretaker_id: "caretaker_" + Date.now(),
+    name: name.trim(),
+    email: cleanEmail,
+    property_id,
+    room_number: room_number && room_number.trim() !== "" ? room_number.trim() : undefined,
+    pin: generatedPin
+  };
+
+  db.caretakers.push(newCaretaker);
+
+  // Set as the primary caretaker_email for the property validation
+  property.caretaker_email = cleanEmail;
+
+  writeDB(db);
+  res.json({ success: true, caretaker: newCaretaker });
+});
+
+app.delete("/api/caretakers/:caretaker_id", (req, res) => {
+  const db = readDB();
+  db.caretakers = db.caretakers || [];
+  const { caretaker_id } = req.params;
+
+  const idx = db.caretakers.findIndex((c) => c.caretaker_id === caretaker_id);
+  if (idx === -1) {
+    return res.status(404).json({ error: "Caretaker not found." });
+  }
+
+  const caretaker = db.caretakers[idx];
+  db.caretakers.splice(idx, 1);
+
+  // Clean from property validation if matches exactly
+  const property = db.properties.find((p) => p.property_id === caretaker.property_id);
+  if (property && property.caretaker_email === caretaker.email) {
+    const fallbackCaretaker = db.caretakers.find((c) => c.property_id === caretaker.property_id);
+    if (fallbackCaretaker) {
+      property.caretaker_email = fallbackCaretaker.email;
+    } else {
+      delete property.caretaker_email;
+    }
+  }
+
+  writeDB(db);
+  res.json({ success: true, message: "Caretaker deleted successfully." });
 });
 
 // 3. ROOMS ENDPOINTS
@@ -343,6 +463,16 @@ app.get("/api/tenants", (req, res) => {
   res.json(mapped);
 });
 
+function cleanKenyanPhone(phone: string): string {
+  let cleaned = phone.replace(/\D/g, "");
+  if (cleaned.startsWith("0")) {
+    cleaned = "254" + cleaned.slice(1);
+  } else if ((cleaned.startsWith("7") || cleaned.startsWith("1")) && cleaned.length === 9) {
+    cleaned = "254" + cleaned;
+  }
+  return cleaned;
+}
+
 app.post("/api/tenants", (req, res) => {
   const db = readDB();
   const { full_name, phone_number, property_id, assigned_room_number, registration_date } = req.body;
@@ -352,9 +482,9 @@ app.post("/api/tenants", (req, res) => {
   }
 
   // Enforce Phone Number Format: Starts with 2547... or 2541... (12 digits)
-  const cleanPhone = phone_number.replace(/\D/g, "");
+  const cleanPhone = cleanKenyanPhone(phone_number);
   if (!/^254[71]\d{8}$/.test(cleanPhone)) {
-    return res.status(400).json({ error: "Phone number must match Kenyan format (e.g., 254712345678)" });
+    return res.status(400).json({ error: "Phone number must start with 7, 1, 07, 01, or Kenyan prefix +254" });
   }
 
   // Verify vacant and double booking protection
@@ -405,7 +535,144 @@ app.delete("/api/tenants/:tenant_id", (req, res) => {
   res.json({ message: "Tenant successfully checked out. Room is now Vacant." });
 });
 
+app.delete("/api/properties/:property_id/rooms/:room_number", (req, res) => {
+  const db = readDB();
+  const { property_id, room_number } = req.params;
+
+  const roomIdx = db.rooms.findIndex((r) => r.property_id === property_id && r.room_number === room_number);
+  if (roomIdx === -1) {
+    return res.status(404).json({ error: "Room not found." });
+  }
+
+  db.rooms.splice(roomIdx, 1);
+
+  // Evict any tenant allocated to this room
+  db.tenants = db.tenants.filter((t) => !(t.property_id === property_id && t.assigned_room_number === room_number));
+
+  // Update property's total_units count
+  const property = db.properties.find((p) => p.property_id === property_id);
+  if (property) {
+    property.total_units = db.rooms.filter((r) => r.property_id === property_id).length;
+  }
+
+  writeDB(db);
+  res.json({ message: "Apartment unit removed successfully." });
+});
+
+app.delete("/api/properties/:property_id", (req, res) => {
+  const db = readDB();
+  const { property_id } = req.params;
+
+  const propIdx = db.properties.findIndex((p) => p.property_id === property_id);
+  if (propIdx === -1) {
+    return res.status(404).json({ error: "Property not found." });
+  }
+
+  db.properties.splice(propIdx, 1);
+
+  // Cascade delete rooms, tenants, payments, maintenance tickets under this property
+  db.rooms = db.rooms.filter((r) => r.property_id !== property_id);
+  db.tenants = db.tenants.filter((t) => t.property_id !== property_id);
+  db.payments = db.payments.filter((p) => p.property_id !== property_id);
+  db.maintenance = db.maintenance.filter((m) => m.property_id !== property_id);
+
+  writeDB(db);
+  res.json({ message: "Property and all its nested records cascaded off successfully." });
+});
+
+app.delete("/api/payments/:transaction_id", (req, res) => {
+  const db = readDB();
+  const { transaction_id } = req.params;
+
+  const payIdx = db.payments.findIndex((p) => p.transaction_id === transaction_id);
+  if (payIdx === -1) {
+    return res.status(404).json({ error: "Payment record not found." });
+  }
+
+  db.payments.splice(payIdx, 1);
+  writeDB(db);
+  res.json({ message: "Payment receipt removed from ledger." });
+});
+
+app.delete("/api/maintenance/:ticket_id", (req, res) => {
+  const db = readDB();
+  const { ticket_id } = req.params;
+
+  const ticketIdx = db.maintenance.findIndex((t) => t.ticket_id === ticket_id);
+  if (ticketIdx === -1) {
+    return res.status(404).json({ error: "Maintenance ticket not found." });
+  }
+
+  db.maintenance.splice(ticketIdx, 1);
+  writeDB(db);
+  res.json({ message: "Repair ticket deleted." });
+});
+
 // 5. AUTHENTICATION ENDPOINTS
+app.post("/api/auth/admin/google-login", (req, res) => {
+  const { email, name, uid } = req.body;
+
+  if (!email) {
+    return res.status(400).json({ error: "Google Auth Error: User email is required." });
+  }
+
+  const normalizedEmail = email.toLowerCase();
+
+  // Check if the authenticated Google email matches collinskosgei32@gmail.com
+  if (normalizedEmail === "collinskosgei32@gmail.com") {
+    return res.json({
+      success: true,
+      session: {
+        role: "Super-Admin",
+        name: name || "Collins Kosgei",
+        email: email,
+        firebase_uid: uid
+      }
+    });
+  }
+
+  // Look up if any active plots/properties have this caretaker email assigned
+  const db = readDB();
+  const matchedProp = db.properties.find(
+    (p) => p.caretaker_email && p.caretaker_email.toLowerCase() === normalizedEmail
+  );
+
+  const matchedCaretaker = db.caretakers?.find(
+    (c) => c.email.toLowerCase() === normalizedEmail
+  );
+
+  if (matchedCaretaker) {
+    const prop = db.properties.find((p) => p.property_id === matchedCaretaker.property_id);
+    return res.json({
+      success: true,
+      session: {
+        role: "Caretaker",
+        property_id: matchedCaretaker.property_id,
+        name: matchedCaretaker.name || name || `${prop?.property_name || "Plot"} Caretaker`,
+        email: email,
+        firebase_uid: uid
+      }
+    });
+  }
+
+  if (matchedProp) {
+    return res.json({
+      success: true,
+      session: {
+        role: "Caretaker",
+        property_id: matchedProp.property_id,
+        name: name || `${matchedProp.property_name} Caretaker`,
+        email: email,
+        firebase_uid: uid
+      }
+    });
+  }
+
+  return res.status(403).json({
+    error: `Access Denied: '${email}' is not authorized. Only collinskosgei32@gmail.com or registered caretakers can log in.`
+  });
+});
+
 app.post("/api/auth/admin/login", (req, res) => {
   const { role, pin, property_id } = req.body;
 
@@ -417,12 +684,49 @@ app.post("/api/auth/admin/login", (req, res) => {
       });
     }
   } else if (role === "Caretaker") {
-    if (!property_id) {
-      return res.status(400).json({ error: "Please select the property you manage." });
+    const db = readDB();
+
+    // First try direct bypass lookup by unique alphanumeric PIN (Passkey)
+    if (pin && pin.length >= 4) {
+      const matchedCaretakerByPin = db.caretakers?.find(
+        (c) => c.pin.toUpperCase() === pin.trim().toUpperCase()
+      );
+      if (matchedCaretakerByPin) {
+        return res.json({
+          success: true,
+          session: {
+            role: "Caretaker",
+            property_id: matchedCaretakerByPin.property_id,
+            name: matchedCaretakerByPin.name,
+            email: matchedCaretakerByPin.email
+          }
+        });
+      }
     }
-    // PIN condition for Caretakers is the year 2026 or "5678"
+
+    if (!property_id) {
+      return res.status(400).json({ error: "Please select the property you manage or enter a valid 6-char partner Passkey." });
+    }
+    
+    // Check registered caretakers for matching property and pin
+    const matchedCaretaker = db.caretakers?.find(
+      (c) => c.property_id === property_id && c.pin.toUpperCase() === pin.trim().toUpperCase()
+    );
+
+    if (matchedCaretaker) {
+      return res.json({
+        success: true,
+        session: {
+          role: "Caretaker",
+          property_id,
+          name: matchedCaretaker.name,
+          email: matchedCaretaker.email
+        }
+      });
+    }
+
+    // Default legacy PIN condition for Caretakers (year 2026 or "5678")
     if (pin === "5678" || pin === "2026") {
-      const db = readDB();
       const prop = db.properties.find((p) => p.property_id === property_id);
       return res.json({
         success: true,
@@ -441,24 +745,38 @@ app.post("/api/auth/admin/login", (req, res) => {
 app.post("/api/auth/tenant/login", (req, res) => {
   const { property_id, phone_number, room_number } = req.body;
 
-  if (!property_id || !phone_number || !room_number) {
-    return res.status(400).json({ error: "Property, Phone, and Apartment/Room code are all required." });
+  if (!phone_number || !room_number) {
+    return res.status(400).json({ error: "Username/Phone and PIN/Room Code are required." });
   }
 
-  const cleanPhone = phone_number.replace(/\D/g, "");
+  const cleanPhone = cleanKenyanPhone(phone_number);
+  const userPin = room_number.trim().toLowerCase();
   const db = readDB();
 
-  // Find tenant bounding query parameters with building scope
-  const tenant = db.tenants.find(
-    (t) =>
-      t.property_id === property_id &&
-      t.phone_number === cleanPhone &&
-      t.assigned_room_number.toLowerCase() === room_number.toLowerCase()
-  );
+  // Find tenant that matches building scope if supplied, and matches username or clean phone number
+  const tenant = db.tenants.find((t) => {
+    if (property_id && t.property_id !== property_id) return false;
+    
+    const dbPhoneCleaned = cleanKenyanPhone(t.phone_number);
+    const phoneMatches = (dbPhoneCleaned && cleanPhone && dbPhoneCleaned === cleanPhone);
+    const nameAsUsernameMatches = t.full_name.toLowerCase().includes(phone_number.trim().toLowerCase());
+    
+    if (!phoneMatches && !nameAsUsernameMatches) return false;
+
+    const dbRoomCleaned = t.assigned_room_number.toLowerCase();
+    const dbNameCleaned = t.full_name.toLowerCase();
+    const dbFirstNameCleaned = dbNameCleaned.split(" ")[0];
+
+    return (
+      dbRoomCleaned === userPin ||
+      dbNameCleaned === userPin ||
+      dbFirstNameCleaned === userPin
+    );
+  });
 
   if (!tenant) {
     return res.status(401).json({
-      error: "Authentication failed. No tenant matching building, room, and phone combination."
+      error: "User not available. Please verify your registered username/phone and pin credentials."
     });
   }
 

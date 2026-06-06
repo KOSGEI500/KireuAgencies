@@ -3,6 +3,7 @@ export interface Property {
   property_name: string;
   geographic_location: string;
   total_units: number; // or dynamically computed length of rooms
+  caretaker_email?: string;
 }
 
 export interface Room {
@@ -46,10 +47,21 @@ export interface MaintenanceTicket {
 
 export type UserRole = 'Super-Admin' | 'Caretaker' | 'Tenant';
 
+export interface Caretaker {
+  caretaker_id: string;
+  name: string;
+  email: string;
+  property_id: string;
+  room_number?: string;
+  pin: string; // Random mix of uppercase letters and numbers (e.g. AB12CD)
+}
+
 export interface AdminSession {
   role: 'Super-Admin' | 'Caretaker';
   property_id?: string; // Assigned property if caretaker
   name: string;
+  email?: string;
+  firebase_uid?: string;
 }
 
 export interface TenantSession {
