@@ -26,6 +26,96 @@ export default function AuthScreens({ properties, onAdminLogin, onTenantLogin }:
   const [tenantPin, setTenantPin] = useState("");
   const [caretakerPasskey, setCaretakerPasskey] = useState("");
 
+  // Room Request States
+  const [showRequestHouseModal, setShowRequestHouseModal] = useState(false);
+  const [requestName, setRequestName] = useState("");
+  const [requestPhone, setRequestPhone] = useState("");
+  const [requestPropId, setRequestPropId] = useState("");
+  const [requestRoomNum, setRequestRoomNum] = useState("");
+  const [vacantRooms, setVacantRooms] = useState<any[]>([]);
+  const [fetchingVacantRooms, setFetchingVacantRooms] = useState(false);
+  const [requestSuccess, setRequestSuccess] = useState<string | null>(null);
+  const [requestError, setRequestError] = useState<string | null>(null);
+
+  const handleOpenRequestHouse = async () => {
+    setShowRequestHouseModal(true);
+    setRequestSuccess(null);
+    setRequestError(null);
+    setFetchingVacantRooms(true);
+    try {
+      const response = await fetch("/api/rooms/vacant");
+      if (response.ok) {
+        const list = await response.json();
+        setVacantRooms(list);
+        if (list.length > 0) {
+          setRequestPropId(list[0].property_id);
+          const firstPropRooms = list.filter((r: any) => r.property_id === list[0].property_id);
+          if (firstPropRooms.length > 0) {
+            setRequestRoomNum(firstPropRooms[0].room_number);
+          }
+        }
+      } else {
+        throw new Error("Unable to fetch vacant rooms.");
+      }
+    } catch (err: any) {
+      setRequestError(err.message || "Failed to load currently vacant rooms.");
+    } finally {
+      setFetchingVacantRooms(false);
+    }
+  };
+
+  const handlePropChange = (propId: string) => {
+    setRequestPropId(propId);
+    const rooms = vacantRooms.filter((r: any) => r.property_id === propId);
+    if (rooms.length > 0) {
+      setRequestRoomNum(rooms[0].room_number);
+    } else {
+      setRequestRoomNum("");
+    }
+  };
+
+  const handleRequestHouseSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!requestName || !requestPhone || !requestPropId || !requestRoomNum) {
+      setRequestError("Please complete all requested data fields.");
+      return;
+    }
+
+    setRequestError(null);
+    setRequestSuccess(null);
+
+    try {
+      const response = await fetch("/api/room-requests", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: requestName.trim(),
+          phone_number: requestPhone.trim(),
+          property_id: requestPropId,
+          room_number: requestRoomNum
+        })
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to submit room request.");
+      }
+
+      setRequestSuccess("Your application has been filed successfully with the admin!");
+      setRequestName("");
+      setRequestPhone("");
+      
+      // Refresh list
+      const vacRes = await fetch("/api/rooms/vacant");
+      if (vacRes.ok) {
+        const list = await vacRes.json();
+        setVacantRooms(list);
+      }
+    } catch (err: any) {
+      setRequestError(err.message || "An error occurred while filing the request.");
+    }
+  };
+
   const handleTenantSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!tenantUsername || !tenantPin) {
@@ -316,6 +406,19 @@ export default function AuthScreens({ properties, onAdminLogin, onTenantLogin }:
                         <LogIn className="w-3.5 h-3.5 text-emerald-300" />
                       </button>
                     </div>
+
+                    <div className="sm:col-span-2 pt-2 border-t border-white/5 flex flex-col sm:flex-row items-center justify-between gap-2.5 text-xs">
+                      <span className="text-[11px] text-slate-400 font-medium">Don't have login data or looking for a room?</span>
+                      <button
+                        type="button"
+                        id="open-request-house-btn"
+                        onClick={handleOpenRequestHouse}
+                        className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-550 text-white font-bold text-[10px] uppercase rounded-lg transition-all cursor-pointer shadow-sm tracking-wider hover:scale-[1.02] flex items-center gap-1"
+                      >
+                        <Sparkles className="w-3 h-3 text-emerald-200 animate-pulse" />
+                        <span>Request a House</span>
+                      </button>
+                    </div>
                   </form>
                 </div>
 
@@ -423,6 +526,160 @@ export default function AuthScreens({ properties, onAdminLogin, onTenantLogin }:
           <span>© 2026 Kireu Agencies Ltd. All Rights Reserved.</span>
         </div>
       </footer>
+
+      {/* REQUEST A HOUSE / VACANT ROOM REQUEST MODAL */}
+      {showRequestHouseModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-md animate-in fade-in duration-300">
+          <div className="w-full max-w-xl bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 space-y-6 relative max-h-[90vh] overflow-y-auto shadow-2xl text-left">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-4">
+              <div className="flex items-center gap-2.5">
+                <Building className="w-5.5 h-5.5 text-emerald-400" />
+                <h3 className="text-sm font-bold text-white tracking-widest uppercase font-display">Apply / Request a Room</h3>
+              </div>
+              <button 
+                onClick={() => setShowRequestHouseModal(false)}
+                className="p-1 px-2.5 bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white rounded-lg text-[10px] font-bold uppercase transition-all cursor-pointer"
+              >
+                Close
+              </button>
+            </div>
+
+            {fetchingVacantRooms ? (
+              <div className="py-12 flex flex-col items-center justify-center gap-2 text-slate-400">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-emerald-500"></div>
+                <span className="text-[10px] font-mono uppercase tracking-widest">Querying Active Vacancies...</span>
+              </div>
+            ) : vacantRooms.length === 0 ? (
+              <div className="py-8 text-center text-slate-400 space-y-4">
+                <div className="w-12 h-12 rounded-full bg-slate-800 flex items-center justify-center mx-auto text-slate-500">
+                  <Building2 className="w-6 h-6" />
+                </div>
+                <div className="space-y-1">
+                  <p className="font-bold text-sm text-slate-200">No Vacancies Currently Available</p>
+                  <p className="text-xs text-slate-550 leading-relaxed max-w-sm mx-auto">
+                    All our luxury rooms are fully occupied. We periodically publish newly vacant assets, kindly try again later!
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <form onSubmit={handleRequestHouseSubmit} className="space-y-4">
+                <div className="bg-emerald-950/20 border border-emerald-500/20 rounded-xl p-3 text-xs text-emerald-400 leading-normal font-sans">
+                  💡 Select your desired plot and available room, fill in your coordinates, and easily lodge your request with our directors below.
+                </div>
+
+                {requestSuccess && (
+                  <div className="p-3 bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 rounded-xl text-xs font-semibold leading-relaxed font-sans">
+                    🎉 {requestSuccess}
+                  </div>
+                )}
+
+                {requestError && (
+                  <div className="p-3 bg-rose-500/10 border border-rose-500/30 text-rose-300 rounded-xl text-xs font-semibold leading-relaxed font-sans">
+                    ⚠️ {requestError}
+                  </div>
+                )}
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 font-sans">
+                  {/* Select Plot */}
+                  <div>
+                    <label htmlFor="req-plot-select" className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Choose the Plot</label>
+                    <select
+                      id="req-plot-select"
+                      value={requestPropId}
+                      onChange={(e) => handlePropChange(e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-slate-205 focus:outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer text-white"
+                      required
+                    >
+                      {Array.from(new Set(vacantRooms.map((r: any) => r.property_id))).map((pId: string) => {
+                        const propObj = properties.find((p: any) => p.property_id === pId);
+                        return (
+                          <option key={pId} value={pId} className="text-slate-900 bg-white">
+                            {propObj ? propObj.property_name : pId}
+                          </option>
+                        );
+                      })}
+                    </select>
+                  </div>
+
+                  {/* Select Available Room */}
+                  <div>
+                    <label htmlFor="req-room-select" className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Select the Available Room</label>
+                    <select
+                      id="req-room-select"
+                      value={requestRoomNum}
+                      onChange={(e) => setRequestRoomNum(e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-slate-205 focus:outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer text-white"
+                      required
+                    >
+                      {vacantRooms.filter((r: any) => r.property_id === requestPropId).map((r: any) => (
+                        <option key={r.room_number} value={r.room_number} className="text-slate-900 bg-white">
+                          🚪 Door {r.room_number} (Rent: KES {r.monthly_rent.toLocaleString()} / Deposit KES {r.utility_rate.toLocaleString()})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Applicant Name */}
+                  <div>
+                    <label htmlFor="req-name-input" className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Your Full Name</label>
+                    <input
+                      id="req-name-input"
+                      type="text"
+                      placeholder="e.g. John Doe"
+                      value={requestName}
+                      onChange={(e) => setRequestName(e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500 placeholder-slate-650"
+                      required
+                    />
+                  </div>
+
+                  {/* Applicant Phone */}
+                  <div>
+                    <label htmlFor="req-phone-input" className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Your Phone Number</label>
+                    <input
+                      id="req-phone-input"
+                      type="text"
+                      placeholder="e.g. 0712345678"
+                      value={requestPhone}
+                      onChange={(e) => setRequestPhone(e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500 placeholder-slate-650"
+                      required
+                    />
+                  </div>
+                </div>
+
+                {/* Structured message preview panel */}
+                <div className="bg-slate-950 p-4 rounded-xl border border-slate-850 space-y-2">
+                  <span className="block text-[9px] font-extrabold uppercase tracking-wider text-slate-400 font-mono">
+                    📨 Structured message sent to director
+                  </span>
+                  <div className="bg-slate-900 border-l-2 border-emerald-500 p-2.5 text-[11px] text-slate-300 font-sans leading-relaxed italic rounded-r-lg">
+                    "hello, I am {requestName || "[Your Name]"}, I request for the vacant room {requestRoomNum || "[Room Number]"} at {properties.find(p => p.property_id === requestPropId)?.property_name || "[Plot]"}, if still available reach me at {requestPhone || "[Phone]"}"
+                  </div>
+                </div>
+
+                <div className="pt-2 flex justify-end gap-3 font-sans">
+                  <button
+                    type="button"
+                    onClick={() => setShowRequestHouseModal(false)}
+                    className="px-5 py-2.5 bg-slate-800 hover:bg-slate-755 text-slate-200 font-bold text-[10px] tracking-wider uppercase rounded-xl transition-all cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    id="submit-room-request-btn"
+                    className="px-5 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-bold text-[10px] tracking-wider uppercase rounded-xl transition-all cursor-pointer shadow-md flex items-center gap-1.5"
+                  >
+                    <span>Send Application</span>
+                    <ArrowRight className="w-4.5 h-4.5 text-emerald-250" />
+                  </button>
+                </div>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* TERMS & CONDITIONS MODAL */}
       {showTerms && (

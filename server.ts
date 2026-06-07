@@ -3,7 +3,7 @@ import path from "path";
 import fs from "fs";
 import { createServer as createViteServer } from "vite";
 import dotenv from "dotenv";
-import { Property, Room, Tenant, Payment, MaintenanceTicket, Caretaker, SMSLog } from "./src/types";
+import { Property, Room, Tenant, Payment, MaintenanceTicket, Caretaker, SMSLog, RoomRequest } from "./src/types";
 
 dotenv.config();
 
@@ -22,6 +22,7 @@ interface DBModel {
   maintenance: MaintenanceTicket[];
   caretakers?: Caretaker[];
   sms_logs?: SMSLog[];
+  room_requests?: RoomRequest[];
 }
 
 // Initial seed data representing real plots/houses across Kenya
@@ -155,10 +156,13 @@ function readDB(): DBModel {
     if (!parsed.sms_logs) {
       parsed.sms_logs = [];
     }
+    if (!parsed.room_requests) {
+      parsed.room_requests = [];
+    }
     return parsed;
   } catch (error) {
     console.error("DB reading error, fallback to memory", error);
-    return { ...INITIAL_DB, caretakers: [], sms_logs: [] };
+    return { ...INITIAL_DB, caretakers: [], sms_logs: [], room_requests: [] };
   }
 }
 
@@ -189,8 +193,7 @@ function getBillingStatusForTenant(tenant: Tenant, db: DBModel, targetDate = new
   }
 
   const monthlyRent = room.monthly_rent;
-  const utilityRate = room.utility_rate;
-  const totalBillable = monthlyRent + utilityRate;
+  const utilityRate = room.utility_rate; // This represents the one-time, refundable Security Deposit / Maintenance Fee
 
   // Compute cycle dates
   const regDate = new Date(tenant.registration_date);
@@ -222,6 +225,10 @@ function getBillingStatusForTenant(tenant: Tenant, db: DBModel, targetDate = new
   const cycleEndYear = cycleStartYear + (cycleEndMonth > 11 ? 1 : 0);
   const cycleEnd = getSafeDate(cycleEndYear, cycleEndMonth % 12, regDay);
   cycleEnd.setHours(0, 0, 0, 0);
+
+  // Check if this is the tenant's first billing cycle of occupancy (deposit is only charged matching first month registration)
+  const isFirstCycle = (cycleStart.getFullYear() === regDate.getFullYear() && cycleStart.getMonth() === regDate.getMonth());
+  const totalBillable = isFirstCycle ? (monthlyRent + utilityRate) : monthlyRent;
 
   // Sum payments made STRICTLY in this current billing period (Completed status)
   const paymentsInPeriod = db.payments.filter((p) => {
@@ -412,6 +419,12 @@ app.get("/api/properties/:property_id/rooms", (req, res) => {
   const db = readDB();
   const rooms = db.rooms.filter((r) => r.property_id === req.params.property_id);
   res.json(rooms);
+});
+
+app.get("/api/rooms/vacant", (req, res) => {
+  const db = readDB();
+  const vacantRooms = db.rooms.filter(r => r.status === "Vacant");
+  res.json(vacantRooms);
 });
 
 app.post("/api/rooms", (req, res) => {
@@ -1126,6 +1139,14 @@ app.get("/api/sms/logs", (req, res) => {
   res.json(db.sms_logs || []);
 });
 
+app.get("/api/tenants/:tenant_id/messages", (req, res) => {
+  const db = readDB();
+  const tenantId = req.params.tenant_id;
+  const logs = db.sms_logs || [];
+  const messages = logs.filter(log => log.tenant_id === tenantId);
+  res.json(messages);
+});
+
 app.post("/api/sms/remind", async (req, res) => {
   const db = readDB();
   const { tenant_ids, custom_message } = req.body;
@@ -1267,6 +1288,71 @@ app.post("/api/sms/remind", async (req, res) => {
     results,
     isSimulation
   });
+});
+
+
+// 10. ROOM REQUESTS ENDPOINTS
+app.get("/api/room-requests", (req, res) => {
+  const db = readDB();
+  res.json(db.room_requests || []);
+});
+
+app.post("/api/room-requests", (req, res) => {
+  const db = readDB();
+  const { name, phone_number, property_id, room_number } = req.body;
+
+  if (!name || !phone_number || !property_id || !room_number) {
+    return res.status(400).json({ error: "Missing required fields (name, phone_number, property_id, room_number)." });
+  }
+
+  const property = db.properties.find(p => p.property_id === property_id);
+  if (!property) {
+    return res.status(404).json({ error: "Selected property layout not found." });
+  }
+
+  const room = db.rooms.find(r => r.property_id === property_id && r.room_number === room_number);
+  if (!room) {
+    return res.status(404).json({ error: "Selected room number not found." });
+  }
+
+  if (room.status !== "Vacant") {
+    return res.status(400).json({ error: "Selected room is already occupied." });
+  }
+
+  const newRequest: RoomRequest = {
+    id: "req_" + Date.now() + "_" + Math.floor(Math.random() * 1000),
+    name: name.trim(),
+    phone_number: phone_number.trim(),
+    property_id,
+    property_name: property.property_name,
+    room_number,
+    submitted_at: new Date().toISOString()
+  };
+
+  if (!db.room_requests) {
+    db.room_requests = [];
+  }
+
+  db.room_requests.push(newRequest);
+  writeDB(db);
+
+  res.json({ success: true, message: "Your request has been successfully filed with the admin.", request: newRequest });
+});
+
+app.delete("/api/room-requests/:id", (req, res) => {
+  const db = readDB();
+  if (!db.room_requests) {
+    db.room_requests = [];
+  }
+  const initialLength = db.room_requests.length;
+  db.room_requests = db.room_requests.filter(r => r.id !== req.params.id);
+  
+  if (db.room_requests.length === initialLength) {
+    return res.status(404).json({ error: "Room request not found." });
+  }
+
+  writeDB(db);
+  res.json({ success: true, message: "Room request removed from database tracking." });
 });
 
 

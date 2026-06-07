@@ -80,3 +80,14 @@ export interface SMSLog {
   timestamp: string;
   error?: string;
 }
+
+export interface RoomRequest {
+  id: string;
+  name: string;
+  phone_number: string;
+  property_id: string;
+  property_name: string;
+  room_number: string;
+  submitted_at: string;
+}
+

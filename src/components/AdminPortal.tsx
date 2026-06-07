@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from "react";
-import { Property, Room, Tenant, Payment, MaintenanceTicket, AdminSession } from "../types";
+import { Property, Room, Tenant, Payment, MaintenanceTicket, AdminSession, RoomRequest } from "../types";
 import { 
   Building2, Users, Receipt, Wrench, Shield, LogOut, CheckCircle, Plus, 
   Trash2, PlusCircle, Smartphone, Sparkles, Filter, Landmark, MapPin, Eye, AlertCircle, Clock,
-  Menu, X, User, MessageSquare
+  Menu, X, User, MessageSquare, ListCollapse, Building, ExternalLink, Settings
 } from "lucide-react";
 
 interface AdminPortalProps {
@@ -11,9 +11,47 @@ interface AdminPortalProps {
   properties: Property[];
   onLogout: () => void;
   onRefreshProperties: () => void;
+  onOpenSettings?: () => void;
 }
 
-export default function AdminPortal({ session, properties, onLogout, onRefreshProperties }: AdminPortalProps) {
+export function calculateTimeCovered(regDateStr: string): string {
+  if (!regDateStr) return "N/A";
+  const regDate = new Date(regDateStr);
+  const now = new Date();
+  
+  if (now < regDate) {
+    return "Starts soon";
+  }
+
+  let years = now.getFullYear() - regDate.getFullYear();
+  let months = now.getMonth() - regDate.getMonth();
+  let days = now.getDate() - regDate.getDate();
+
+  if (days < 0) {
+    months--;
+    const prevMonthDate = new Date(now.getFullYear(), now.getMonth(), 0);
+    days += prevMonthDate.getDate();
+  }
+
+  if (months < 0) {
+    years--;
+    months += 12;
+  }
+
+  const totalMonths = years * 12 + months;
+  
+  const parts: string[] = [];
+  if (totalMonths > 0) {
+    parts.push(`${totalMonths} month${totalMonths > 1 ? "s" : ""}`);
+  }
+  if (days > 0 || totalMonths === 0) {
+    parts.push(`${days} day${days > 1 ? "s" : ""}`);
+  }
+
+  return parts.join(", ");
+}
+
+export default function AdminPortal({ session, properties, onLogout, onRefreshProperties, onOpenSettings }: AdminPortalProps) {
   // Active selected property to view (Defaults to caretaker's assigned property ID or the first property in properties)
   const isCaretaker = session.role === "Caretaker";
   const mandatedPropertyId = isCaretaker ? session.property_id! : "";
@@ -25,10 +63,54 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
   const [maintenance, setMaintenance] = useState<MaintenanceTicket[]>([]);
 
   // Tab State with "clock" view support
-  const [activeTab, setActiveTab] = useState<"dashboard" | "rooms" | "tenants" | "payments" | "maintenance" | "properties" | "clock" | "caretakers" | "sms">("dashboard");
+  const [activeTab, setActiveTab] = useState<"dashboard" | "rooms" | "tenants" | "payments" | "maintenance" | "properties" | "clock" | "caretakers" | "sms" | "requests">("dashboard");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
-  const handleTabClick = (tab: "dashboard" | "rooms" | "tenants" | "payments" | "maintenance" | "properties" | "clock" | "caretakers" | "sms") => {
+  // States and Handlers for Vacant Room Requests
+  const [roomRequests, setRoomRequests] = useState<RoomRequest[]>([]);
+  const [fetchingRoomRequests, setFetchingRoomRequests] = useState(false);
+  const [deletingRequestId, setDeletingRequestId] = useState<string | null>(null);
+
+  const fetchRoomRequests = async () => {
+    setFetchingRoomRequests(true);
+    try {
+      const response = await fetch("/api/room-requests");
+      if (response.ok) {
+        const data = await response.json();
+        setRoomRequests(data);
+      }
+    } catch (err) {
+      console.error("Error loading room requests:", err);
+    } finally {
+      setFetchingRoomRequests(false);
+    }
+  };
+
+  const handleDeleteRoomRequest = async (id: string) => {
+    if (!window.confirm("Are you sure you want to dismiss this vacant room request from list?")) {
+      return;
+    }
+    setDeletingRequestId(id);
+    try {
+      const response = await fetch(`/api/room-requests/${id}`, {
+        method: "DELETE"
+      });
+      if (response.ok) {
+        setRoomRequests(prev => prev.filter(r => r.id !== id));
+        // Push a log
+        const logStr = `[ROOM REQUESTS] Dismissed applicant request ID: ${id}`;
+        setSyncLogs(prev => [logStr, ...prev.slice(0, 49)]);
+      } else {
+        alert("Unable to dismiss request at the moment.");
+      }
+    } catch (err) {
+      console.error("Error deleting room request:", err);
+    } finally {
+      setDeletingRequestId(null);
+    }
+  };
+
+  const handleTabClick = (tab: "dashboard" | "rooms" | "tenants" | "payments" | "maintenance" | "properties" | "clock" | "caretakers" | "sms" | "requests") => {
     setActiveTab(tab);
     setMobileMenuOpen(false);
   };
@@ -135,6 +217,13 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
   useEffect(() => {
     if (!isCaretaker) {
       fetchCaretakers();
+    }
+  }, [activeTab]);
+
+  // Load room requests on tab change
+  useEffect(() => {
+    if (activeTab === "requests") {
+      fetchRoomRequests();
     }
   }, [activeTab]);
 
@@ -851,6 +940,19 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
             <span>Communications Desk</span>
           </button>
 
+          <button
+            onClick={() => handleTabClick("requests")}
+            className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold rounded-lg transition-all relative text-left ${
+              activeTab === "requests" ? "sidebar-active text-white shadow-xs" : "text-slate-400 hover:text-white hover:bg-slate-800"
+            }`}
+          >
+            <ListCollapse className="w-4 h-4 text-emerald-400" />
+            <span>Requested Rooms</span>
+            {roomRequests.length > 0 && (
+              <span className="absolute right-2 px-1.5 py-0.5 bg-emerald-500 text-white font-mono text-[9px] font-bold rounded-full animate-bounce">{roomRequests.length}</span>
+            )}
+          </button>
+
           {!isCaretaker && (
             <>
               <button
@@ -883,6 +985,18 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
           >
             <Clock className="w-4 h-4" />
             <span>Clock Sync Auditor</span>
+          </button>
+
+          <button
+            onClick={() => {
+              setMobileMenuOpen(false);
+              onOpenSettings?.();
+            }}
+            className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold rounded-lg transition-all text-left text-emerald-450 hover:text-white hover:bg-emerald-500/10 border border-emerald-500/20 bg-emerald-500/5 mt-1"
+            title="Adjust system preferences and accessibility options"
+          >
+            <Settings className="w-4 h-4 text-emerald-400 shrink-0" />
+            <span>⚙️ System Settings</span>
           </button>
         </nav>
 
@@ -1144,7 +1258,7 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
                     Unit Rooms Floor Space
                   </h2>
                   <p className="text-slate-400 text-xs max-w-xl leading-relaxed">
-                    Configure room dimensions, monthly rents, and flat utility rates for individual rentable apartments inside {activeBrandName}.
+                    Configure room dimensions, monthly rents, and one-time refundable security deposits for individual rentable apartments inside {activeBrandName}.
                   </p>
                 </div>
                 
@@ -1226,16 +1340,19 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
                 </div>
 
                 <div>
-                  <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Monthly Flat Utility Rate (KES)</label>
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Security Deposit / Maintenance Fee (KES)</label>
                   <input
                     id="new-room-util"
                     type="number"
-                    placeholder="e.g. 1200"
+                    placeholder="e.g. 5000 (Refundable security / maintenance deposit)"
                     value={newRoomUtil}
                     onChange={(e) => setNewRoomUtil(e.target.value)}
                     className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-slate-800"
                     required
                   />
+                  <p className="text-[9px] text-slate-400 mt-1 leading-normal font-sans">
+                    Paid once when securing a room to cover damages (e.g. toilet fixtures, paint). Fully or partially refunded upon moving out.
+                  </p>
                 </div>
 
                 <div>
@@ -1279,8 +1396,8 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
                       <tr className="bg-slate-50 border-b border-slate-200 text-slate-450 font-bold">
                         <th className="p-3">Room Code</th>
                         <th className="p-3">Rent Rate</th>
-                        <th className="p-3">Utility flat rate</th>
-                        <th className="p-3">Total Monthly Rate</th>
+                        <th className="p-3">Security Deposit (Refundable)</th>
+                        <th className="p-3">First Month Total (Rent + Deposit)</th>
                         <th className="p-3 text-center">Placement State</th>
                         <th className="p-3 text-right">Action</th>
                       </tr>
@@ -1290,8 +1407,14 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
                         <tr key={idx} className="border-b border-slate-100 hover:bg-slate-50/50">
                           <td className="p-3 font-bold font-mono text-slate-900 text-sm">{r.room_number}</td>
                           <td className="p-3 font-mono">{r.monthly_rent.toLocaleString()} KES</td>
-                          <td className="p-3 font-mono text-slate-500">{r.utility_rate.toLocaleString()} KES</td>
-                          <td className="p-3 font-bold font-mono text-slate-850">{(r.monthly_rent + r.utility_rate).toLocaleString()} KES</td>
+                          <td className="p-3 font-mono text-slate-500">
+                            {r.utility_rate.toLocaleString()} KES
+                            <span className="text-[9px] text-slate-400 block font-sans font-normal mt-0.5">Paid once</span>
+                          </td>
+                          <td className="p-3 font-bold font-mono text-slate-850">
+                            {(r.monthly_rent + r.utility_rate).toLocaleString()} KES
+                            <span className="text-[9px] text-slate-400 block font-sans font-normal mt-0.5">Subsequent months: {r.monthly_rent.toLocaleString()} KES</span>
+                          </td>
                           <td className="p-3 text-center">
                             <span className={`px-2.5 py-1 rounded-lg text-[10px] font-bold ${
                               r.status === "Vacant" ? "bg-emerald-50 text-emerald-800 border border-emerald-100" : "bg-blue-50 text-blue-800 border border-blue-100"
@@ -1449,7 +1572,7 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
                     disabled={vacantRooms.length === 0}
                   >
                     {vacantRooms.map(r => (
-                      <option key={r.room_number} value={r.room_number}>🚪 ROOM {r.room_number} (KES {r.monthly_rent + r.utility_rate})</option>
+                      <option key={r.room_number} value={r.room_number}>🚪 ROOM {r.room_number} (Rent: KES {r.monthly_rent.toLocaleString()} + Deposit: KES {r.utility_rate.toLocaleString()})</option>
                     ))}
                   </select>
                   {vacantRooms.length === 0 ? (
@@ -1471,6 +1594,33 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
                   />
                   <span className="text-[9px] text-slate-400 block mt-0.5">Rent ledger auto-unpaid resets on this day of each month</span>
                 </div>
+
+                {(() => {
+                  const activeSelectedRoom = vacantRooms.find(r => r.room_number === newTenantRoom);
+                  if (!activeSelectedRoom) return null;
+                  const totalInitialFunds = activeSelectedRoom.monthly_rent + activeSelectedRoom.utility_rate;
+                  return (
+                    <div className="p-3.5 bg-blue-50 border border-blue-200 rounded-2xl space-y-2 text-left">
+                      <span className="block text-[10px] font-extrabold uppercase tracking-wider text-blue-700 font-mono">
+                        💰 Onboarding Financial Breakdown
+                      </span>
+                      <div className="space-y-1 text-xs text-slate-700">
+                        <div className="flex justify-between">
+                          <span>First Month Rent:</span>
+                          <span className="font-mono font-bold">KES {activeSelectedRoom.monthly_rent.toLocaleString()}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Security Deposit (Refundable):</span>
+                          <span className="font-mono font-bold">KES {activeSelectedRoom.utility_rate.toLocaleString()}</span>
+                        </div>
+                        <div className="pt-2 border-t border-blue-100 flex justify-between text-slate-900 leading-normal">
+                          <span className="font-bold">Total Initial Funds Owed:</span>
+                          <span className="font-mono font-black text-blue-800 text-sm">KES {totalInitialFunds.toLocaleString()}</span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 <button
                   type="submit"
@@ -1500,7 +1650,8 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
                         <th className="p-3">Full Legal Name</th>
                         <th className="p-3 text-center">Assigned Unit</th>
                         <th className="p-3 text-right">Rent Owed</th>
-                        <th className="p-3">Registration Anniversary</th>
+                        <th className="p-3">Registration &amp; Duration</th>
+                        <th className="p-3">Total Paid &amp; Clear Dates</th>
                         <th className="p-3 text-right">Operations Gate</th>
                       </tr>
                     </thead>
@@ -1517,9 +1668,49 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
                           <td className="p-3 text-right font-mono font-bold text-slate-800">
                             {t.billing?.outstandingBalance?.toLocaleString()} KES
                           </td>
-                          <td className="p-3 text-slate-500 font-medium">
-                            📅 {new Date(t.registration_date).toLocaleDateString("en-KE")} 
-                            <span className="text-[10px] text-indigo-600 font-bold block">Day {t.registration_date.split("-")[2]} billing reset</span>
+                          <td className="p-3">
+                            <div className="space-y-1 font-sans">
+                              <div>
+                                <span className="font-bold text-slate-500">Date Assigned:</span>{" "}
+                                <span className="text-slate-905 font-mono font-bold">
+                                  {new Date(t.registration_date).toLocaleDateString("en-KE", { day: 'numeric', month: 'short', year: 'numeric' })}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-1">
+                                <span className="font-bold text-slate-500">Duration Covered:</span>
+                                <span className="text-emerald-700 bg-emerald-50 border border-emerald-150 px-1.5 py-0.5 rounded-md font-bold text-[10px] animate-pulse whitespace-nowrap">
+                                  ⏳ {calculateTimeCovered(t.registration_date)}
+                                </span>
+                              </div>
+                              <span className="text-[10px] text-indigo-650 font-bold block">
+                                Day {t.registration_date.split("-")[2]} billing reset cycle
+                              </span>
+                            </div>
+                          </td>
+                          <td className="p-3">
+                            {(() => {
+                              const tenantPays = payments.filter((p) => p.tenant_id === t.tenant_id && p.status === "Completed");
+                              const totalPaid = tenantPays.reduce((sum, p) => sum + p.amount, 0);
+                              return (
+                                <div className="space-y-1 max-w-[220px]">
+                                  <div className="font-bold text-slate-900 text-[11px]">
+                                    Paid Total: <span className="text-emerald-555 font-mono font-black text-xs">KES {totalPaid.toLocaleString()}</span>
+                                  </div>
+                                  {tenantPays.length > 0 ? (
+                                    <div className="space-y-1.5 max-h-[100px] overflow-y-auto pr-1">
+                                      {tenantPays.map((p, pIdx) => (
+                                        <div key={p.transaction_id || pIdx} className="text-[10px] text-slate-500 font-mono flex items-center justify-between gap-2 border-b border-dashed border-slate-100 pb-0.5 last:border-0">
+                                          <span className="text-slate-600 font-semibold">📅 {new Date(p.timestamp).toLocaleDateString("en-KE", { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+                                          <span className="font-bold text-emerald-600">KES {p.amount.toLocaleString()}</span>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  ) : (
+                                    <span className="text-[10px] text-slate-400 italic block">No payments cleared yet</span>
+                                  )}
+                                </div>
+                              );
+                            })()}
                           </td>
                           <td className="p-3 text-right">
                             {isCaretaker ? (
@@ -2045,13 +2236,25 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
                         className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-slate-800 text-slate-800"
                         required
                       />
+                      {newCaretakerPropId && properties.find(p => p.property_id === newCaretakerPropId)?.caretaker_email === newCaretakerEmail && newCaretakerEmail && (
+                        <span className="text-[10px] text-emerald-600 mt-1 block font-medium">
+                          💡 Already registered caretaker email on selected plot. Auto-populated successfully.
+                        </span>
+                      )}
                     </div>
 
                     <div>
                       <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1 font-sans">Assigned Managed Building Plot</label>
                       <select
                         value={newCaretakerPropId}
-                        onChange={(e) => setNewCaretakerPropId(e.target.value)}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setNewCaretakerPropId(val);
+                          const matchingPlot = properties.find(p => p.property_id === val);
+                          if (matchingPlot && matchingPlot.caretaker_email) {
+                            setNewCaretakerEmail(matchingPlot.caretaker_email);
+                          }
+                        }}
                         className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs focus:outline-none focus:ring-2 focus:ring-slate-800 text-slate-800 appearance-none bg-[url('data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%23a0aec0%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.2-5.5-12.8z%22%2F%3E%3C%2Fsvg%3E')] bg-[length:0.65rem_auto] bg-[right_1rem_center] bg-no-repeat"
                         required
                       >
@@ -2394,6 +2597,136 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
                   <span>Delivery Tracking: <strong className="text-slate-705">Database Persistent</strong></span>
                 </div>
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* 11. ROOM REQUESTS PANEL */}
+        {activeTab === "requests" && (
+          <div className="space-y-6 text-left">
+            <div className="bg-slate-900 rounded-3xl p-6 sm:p-8 text-white relative overflow-hidden border border-slate-800 shadow-xl">
+              <div className="absolute top-0 right-0 w-96 h-96 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none"></div>
+              
+              <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6 relative z-10">
+                <div className="space-y-2">
+                  <div className="inline-flex items-center gap-2 px-3 py-1 bg-emerald-500/15 rounded-full border border-emerald-500/20 text-emerald-400 font-mono text-[10px] font-bold uppercase tracking-wider">
+                    Vacant Room Applications
+                  </div>
+                  <h2 className="font-extrabold font-display text-2xl sm:text-3xl text-white tracking-tight">
+                    Visitor Housing Requests
+                  </h2>
+                  <p className="text-slate-400 text-xs max-w-xl leading-relaxed font-sans">
+                    These are real-time, structured room application notifications requested by prospective clients directly from your homepage portal before securing accounts.
+                  </p>
+                </div>
+
+                <div className="p-4 bg-slate-800/80 backdrop-blur-xs rounded-2xl border border-slate-700/50 text-center min-w-[200px]">
+                  <span className="text-[10px] uppercase font-bold text-slate-400 tracking-widest block mb-1">Pending Requests</span>
+                  <div className="font-mono text-2xl font-black text-emerald-400 tracking-wider">
+                    {roomRequests.length} Applications
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-xs high-contrast-card">
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+                <div>
+                  <h3 className="font-extrabold text-sm text-slate-900 font-display flex items-center gap-2">
+                    <ListCollapse className="w-5 h-5 text-emerald-500" />
+                    <span>Lodge &amp; Applicant Catalog</span>
+                  </h3>
+                  <p className="text-xs text-slate-500 font-sans mt-0.5">
+                    Click dismiss once resolved, or use the direct shortcuts below to reach out to potential guests.
+                  </p>
+                </div>
+
+                <button
+                  onClick={fetchRoomRequests}
+                  disabled={fetchingRoomRequests}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-250 text-slate-700 text-xs font-bold rounded-lg transition-all cursor-pointer flex items-center gap-1.5"
+                >
+                  <Sparkles className={`w-3.5 h-3.5 text-emerald-500 ${fetchingRoomRequests ? "animate-spin" : ""}`} />
+                  <span>{fetchingRoomRequests ? "Reloading..." : "Refresh Applications"}</span>
+                </button>
+              </div>
+
+              {fetchingRoomRequests && roomRequests.length === 0 ? (
+                <div className="py-12 flex flex-col items-center justify-center gap-2 text-slate-400">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-emerald-500"></div>
+                  <span className="text-xs font-mono uppercase tracking-widest">Loading Applications database...</span>
+                </div>
+              ) : roomRequests.length === 0 ? (
+                <div className="py-16 text-center text-slate-505 space-y-4 font-sans">
+                  <div className="w-14 h-14 rounded-full bg-slate-100 overflow-hidden flex items-center justify-center mx-auto text-slate-405">
+                    <Building className="w-7 h-7" />
+                  </div>
+                  <div className="space-y-1">
+                    <p className="font-bold text-base text-slate-800">No Pending Tenant Requests</p>
+                    <p className="text-xs text-slate-500 max-w-sm mx-auto">
+                      All applicant inquiries are cleared. When someone requests a vacant room from the login screens, it pops up here!
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <div className="border border-slate-150 rounded-2xl overflow-hidden shadow-xs">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs bg-transparent border-collapse font-sans">
+                      <thead>
+                        <tr className="bg-slate-50 border-b border-slate-155 text-slate-505 font-bold uppercase tracking-wider text-[10px]">
+                          <th className="p-4 whitespace-nowrap">Submission Date</th>
+                          <th className="p-4 whitespace-nowrap">Applicant Profile</th>
+                          <th className="p-4 whitespace-nowrap">Desired Space &amp; Plot</th>
+                          <th className="p-4 whitespace-nowrap text-left">Structured SMS Notification Text</th>
+                          <th className="p-4 text-right whitespace-nowrap">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {roomRequests.map((request) => (
+                          <tr key={request.id} className="border-b border-slate-100 hover:bg-slate-50/55 transition-colors align-top">
+                            <td className="p-4 text-[11px] text-slate-550 font-mono whitespace-nowrap pt-5">
+                              {new Date(request.submitted_at).toLocaleString("en-KE", { hour12: false })}
+                            </td>
+                            <td className="p-4 pt-5 whitespace-nowrap">
+                              <div className="font-bold text-slate-850 text-xs">{request.name}</div>
+                              <div className="text-[11px] font-mono text-slate-500 mt-0.5">{request.phone_number}</div>
+                            </td>
+                            <td className="p-4 pt-5 whitespace-nowrap">
+                              <div className="font-bold text-slate-800 text-xs">{request.property_name}</div>
+                              <div className="inline-flex items-center gap-1 mt-1 px-2 py-0.5 bg-indigo-50 border border-indigo-150 rounded-md text-[10px] font-bold text-indigo-700">
+                                🚪 Room {request.room_number}
+                              </div>
+                            </td>
+                            <td className="p-4 min-w-[280px]">
+                              <div className="bg-slate-50 border border-slate-150/80 p-3 rounded-xl italic text-slate-705 text-[11px] leading-relaxed shadow-xs">
+                                "hello, I am <strong className="text-slate-950 not-italic">{request.name}</strong>, I request for the vacant room <strong className="text-slate-950 not-italic">{request.room_number}</strong>,, if still available reach me at <strong className="text-slate-950 not-italic">{request.phone_number}</strong>"
+                              </div>
+                            </td>
+                            <td className="p-4 text-right pt-5 whitespace-nowrap space-x-2">
+                              <a
+                                href={`tel:${request.phone_number}`}
+                                className="inline-flex items-center gap-1 px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-700 font-bold text-[10px] uppercase rounded-lg transition-all"
+                              >
+                                <Smartphone className="w-3.5 h-3.5 text-emerald-550" />
+                                <span>Call Applicant</span>
+                              </a>
+                              
+                              <button
+                                onClick={() => handleDeleteRoomRequest(request.id)}
+                                disabled={deletingRequestId === request.id}
+                                className="inline-flex items-center gap-1 px-3 py-1.5 bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 font-bold text-[10px] uppercase rounded-lg transition-all cursor-pointer"
+                              >
+                                <Trash2 className="w-3.5 h-3.5 text-rose-550" />
+                                <span>{deletingRequestId === request.id ? "Dismissing..." : "Dismiss"}</span>
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         )}
