@@ -3,7 +3,7 @@ import path from "path";
 import fs from "fs";
 import { createServer as createViteServer } from "vite";
 import dotenv from "dotenv";
-import { Property, Room, Tenant, Payment, MaintenanceTicket, Caretaker } from "./src/types";
+import { Property, Room, Tenant, Payment, MaintenanceTicket, Caretaker, SMSLog } from "./src/types";
 
 dotenv.config();
 
@@ -21,6 +21,7 @@ interface DBModel {
   payments: Payment[];
   maintenance: MaintenanceTicket[];
   caretakers?: Caretaker[];
+  sms_logs?: SMSLog[];
 }
 
 // Initial seed data representing real plots/houses across Kenya
@@ -151,10 +152,13 @@ function readDB(): DBModel {
     if (!parsed.caretakers) {
       parsed.caretakers = [];
     }
+    if (!parsed.sms_logs) {
+      parsed.sms_logs = [];
+    }
     return parsed;
   } catch (error) {
     console.error("DB reading error, fallback to memory", error);
-    return { ...INITIAL_DB, caretakers: [] };
+    return { ...INITIAL_DB, caretakers: [], sms_logs: [] };
   }
 }
 
@@ -610,67 +614,72 @@ app.delete("/api/maintenance/:ticket_id", (req, res) => {
 
 // 5. AUTHENTICATION ENDPOINTS
 app.post("/api/auth/admin/google-login", (req, res) => {
-  const { email, name, uid } = req.body;
+  try {
+    const { email, name, uid } = req.body;
 
-  if (!email) {
-    return res.status(400).json({ error: "Google Auth Error: User email is required." });
-  }
+    if (!email) {
+      return res.status(400).json({ error: "Google Auth Error: User email is required." });
+    }
 
-  const normalizedEmail = email.toLowerCase();
+    const normalizedEmail = email.toLowerCase();
 
-  // Check if the authenticated Google email matches collinskosgei32@gmail.com
-  if (normalizedEmail === "collinskosgei32@gmail.com") {
-    return res.json({
-      success: true,
-      session: {
-        role: "Super-Admin",
-        name: name || "Collins Kosgei",
-        email: email,
-        firebase_uid: uid
-      }
+    // Check if the authenticated Google email matches collinskosgei32@gmail.com or kireuagencyltd1@gmail.com
+    if (normalizedEmail === "collinskosgei32@gmail.com" || normalizedEmail === "kireuagencyltd1@gmail.com") {
+      return res.json({
+        success: true,
+        session: {
+          role: "Super-Admin",
+          name: name || (normalizedEmail === "collinskosgei32@gmail.com" ? "Collins Kosgei" : "Kireu Executive"),
+          email: email,
+          firebase_uid: uid
+        }
+      });
+    }
+
+    // Look up if any active plots/properties have this caretaker email assigned
+    const db = readDB();
+    const matchedProp = db.properties.find(
+      (p) => p.caretaker_email && p.caretaker_email.toLowerCase() === normalizedEmail
+    );
+
+    const matchedCaretaker = db.caretakers?.find(
+      (c) => c.email && c.email.toLowerCase() === normalizedEmail
+    );
+
+    if (matchedCaretaker) {
+      const prop = db.properties.find((p) => p.property_id === matchedCaretaker.property_id);
+      return res.json({
+        success: true,
+        session: {
+          role: "Caretaker",
+          property_id: matchedCaretaker.property_id,
+          name: matchedCaretaker.name || name || `${prop?.property_name || "Plot"} Caretaker`,
+          email: email,
+          firebase_uid: uid
+        }
+      });
+    }
+
+    if (matchedProp) {
+      return res.json({
+        success: true,
+        session: {
+          role: "Caretaker",
+          property_id: matchedProp.property_id,
+          name: name || `${matchedProp.property_name} Caretaker`,
+          email: email,
+          firebase_uid: uid
+        }
+      });
+    }
+
+    return res.status(403).json({
+      error: `Access Denied: '${email}' is not authorized. Only collinskosgei32@gmail.com, kireuagencyltd1@gmail.com, or registered caretakers can log in.`
     });
+  } catch (err: any) {
+    console.error("Internal server error during Google login validation:", err);
+    return res.status(500).json({ error: "Access Denied: Server authentication process encountered a validation issue." });
   }
-
-  // Look up if any active plots/properties have this caretaker email assigned
-  const db = readDB();
-  const matchedProp = db.properties.find(
-    (p) => p.caretaker_email && p.caretaker_email.toLowerCase() === normalizedEmail
-  );
-
-  const matchedCaretaker = db.caretakers?.find(
-    (c) => c.email.toLowerCase() === normalizedEmail
-  );
-
-  if (matchedCaretaker) {
-    const prop = db.properties.find((p) => p.property_id === matchedCaretaker.property_id);
-    return res.json({
-      success: true,
-      session: {
-        role: "Caretaker",
-        property_id: matchedCaretaker.property_id,
-        name: matchedCaretaker.name || name || `${prop?.property_name || "Plot"} Caretaker`,
-        email: email,
-        firebase_uid: uid
-      }
-    });
-  }
-
-  if (matchedProp) {
-    return res.json({
-      success: true,
-      session: {
-        role: "Caretaker",
-        property_id: matchedProp.property_id,
-        name: name || `${matchedProp.property_name} Caretaker`,
-        email: email,
-        firebase_uid: uid
-      }
-    });
-  }
-
-  return res.status(403).json({
-    error: `Access Denied: '${email}' is not authorized. Only collinskosgei32@gmail.com or registered caretakers can log in.`
-  });
 });
 
 app.post("/api/auth/admin/login", (req, res) => {
@@ -1108,6 +1117,156 @@ app.patch("/api/maintenance/:ticket_id", (req, res) => {
   ticket.status = status;
   writeDB(db);
   res.json(ticket);
+});
+
+
+// 9. AFRICA'S TALKING SMS REMINDERS AND MESSAGING LOGS
+app.get("/api/sms/logs", (req, res) => {
+  const db = readDB();
+  res.json(db.sms_logs || []);
+});
+
+app.post("/api/sms/remind", async (req, res) => {
+  const db = readDB();
+  const { tenant_ids, custom_message } = req.body;
+
+  // Find target tenants. If tenant_ids are specified, filter by them. 
+  // Otherwise, default to all tenants with outstanding rent (outstandingBalance > 0).
+  let targets = db.tenants;
+  if (Array.isArray(tenant_ids) && tenant_ids.length > 0) {
+    targets = db.tenants.filter(t => tenant_ids.includes(t.tenant_id));
+  } else {
+    // Filter to ones with actual outstanding balance
+    targets = db.tenants.filter(t => {
+      const billing = getBillingStatusForTenant(t, db);
+      return billing.outstandingBalance > 0;
+    });
+  }
+
+  if (targets.length === 0) {
+    return res.json({ success: true, sentCount: 0, results: [], message: "No tenants found possessing outstanding balances." });
+  }
+
+  const atApiKey = process.env.AT_API_KEY;
+  const atUsername = process.env.AT_USERNAME || "sandbox";
+  const isSimulation = !atApiKey || atApiKey.includes("provide") || atApiKey.length < 5;
+
+  const results: any[] = [];
+  const logsToSave: any[] = [];
+
+  for (const tenant of targets) {
+    const billing = getBillingStatusForTenant(tenant, db);
+    const room = db.rooms.find(r => r.property_id === tenant.property_id && r.room_number === tenant.assigned_room_number);
+    const property = db.properties.find(p => p.property_id === tenant.property_id);
+    
+    // Format message
+    // Allowed placeholders: {name}, {amount}, {room}, {property}, {cycle}
+    let msg = custom_message || "Dear {name}, this is a friendly reminder that you have an outstanding rent balance of KES {amount} for Room {room} at {property}. Please clear your balance as soon as possible via M-PESA. Thank you.";
+    
+    msg = msg
+      .replace(/{name}/g, tenant.full_name)
+      .replace(/{amount}/g, Math.round(billing.outstandingBalance).toLocaleString())
+      .replace(/{room}/g, tenant.assigned_room_number)
+      .replace(/{property}/g, property ? property.property_name : "our premises")
+      .replace(/{cycle}/g, billing.cycleLabel);
+
+    // Make sure phone is clean international format starting with + (or 254...)
+    let cleanPhone = tenant.phone_number.trim();
+    if (!cleanPhone.startsWith("+")) {
+      if (cleanPhone.startsWith("0")) {
+        cleanPhone = "+254" + cleanPhone.slice(1);
+      } else if (cleanPhone.startsWith("254")) {
+        cleanPhone = "+" + cleanPhone;
+      } else {
+        cleanPhone = "+" + cleanPhone;
+      }
+    }
+
+    const logEntry: SMSLog = {
+      id: "sms_" + Date.now() + "_" + Math.floor(Math.random() * 1000),
+      tenant_id: tenant.tenant_id,
+      tenant_name: tenant.full_name,
+      phone_number: cleanPhone,
+      message: msg,
+      status: isSimulation ? "Simulated" : "Sent",
+      timestamp: new Date().toISOString()
+    };
+
+    if (isSimulation) {
+      results.push({
+        tenant_name: tenant.full_name,
+        phone_number: cleanPhone,
+        message: msg,
+        status: "Simulated"
+      });
+      logsToSave.push(logEntry);
+    } else {
+      // Real API Call to Africa's Talking
+      try {
+        const isSandbox = atUsername.toLowerCase() === "sandbox";
+        const url = isSandbox
+          ? "https://api.sandbox.africastalking.com/version1/messaging"
+          : "https://api.africastalking.com/version1/messaging";
+
+        const formBody = new URLSearchParams();
+        formBody.append("username", atUsername);
+        formBody.append("to", cleanPhone);
+        formBody.append("message", msg);
+
+        const response = await fetch(url, {
+          method: "POST",
+          headers: {
+            "Accept": "application/json",
+            "Content-Type": "application/x-www-form-urlencoded",
+            "apiKey": atApiKey
+          },
+          body: formBody.toString()
+        });
+
+        if (response.ok) {
+          const apiRes = await response.json() as any;
+          logEntry.status = "Sent";
+          results.push({
+            tenant_name: tenant.full_name,
+            phone_number: cleanPhone,
+            message: msg,
+            status: "Sent",
+            response: apiRes
+          });
+        } else {
+          const errText = await response.text();
+          throw new Error(errText || "Africa's Talking API Error");
+        }
+        logsToSave.push(logEntry);
+      } catch (error: any) {
+        console.error(`Error sending SMS via AT for ${tenant.full_name}:`, error);
+        logEntry.status = "Failed";
+        logEntry.error = error.message;
+        results.push({
+          tenant_name: tenant.full_name,
+          phone_number: cleanPhone,
+          message: msg,
+          status: "Failed",
+          error: error.message
+        });
+        logsToSave.push(logEntry);
+      }
+    }
+  }
+
+  // Update DB with logs
+  if (!db.sms_logs) {
+    db.sms_logs = [];
+  }
+  db.sms_logs = [...logsToSave, ...db.sms_logs];
+  writeDB(db);
+
+  res.json({
+    success: true,
+    sentCount: targets.length,
+    results,
+    isSimulation
+  });
 });
 
 

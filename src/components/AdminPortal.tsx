@@ -3,7 +3,7 @@ import { Property, Room, Tenant, Payment, MaintenanceTicket, AdminSession } from
 import { 
   Building2, Users, Receipt, Wrench, Shield, LogOut, CheckCircle, Plus, 
   Trash2, PlusCircle, Smartphone, Sparkles, Filter, Landmark, MapPin, Eye, AlertCircle, Clock,
-  Menu, X, User
+  Menu, X, User, MessageSquare
 } from "lucide-react";
 
 interface AdminPortalProps {
@@ -25,10 +25,10 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
   const [maintenance, setMaintenance] = useState<MaintenanceTicket[]>([]);
 
   // Tab State with "clock" view support
-  const [activeTab, setActiveTab] = useState<"dashboard" | "rooms" | "tenants" | "payments" | "maintenance" | "properties" | "clock" | "caretakers">("dashboard");
+  const [activeTab, setActiveTab] = useState<"dashboard" | "rooms" | "tenants" | "payments" | "maintenance" | "properties" | "clock" | "caretakers" | "sms">("dashboard");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
-  const handleTabClick = (tab: "dashboard" | "rooms" | "tenants" | "payments" | "maintenance" | "properties" | "clock" | "caretakers") => {
+  const handleTabClick = (tab: "dashboard" | "rooms" | "tenants" | "payments" | "maintenance" | "properties" | "clock" | "caretakers" | "sms") => {
     setActiveTab(tab);
     setMobileMenuOpen(false);
   };
@@ -36,6 +36,15 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
   // Live clock and synchronization trails
   const [currentTime, setCurrentTime] = useState(new Date());
   const [syncLogs, setSyncLogs] = useState<string[]>([]);
+
+  // SMS configuration states
+  const [smsLogs, setSmsLogs] = useState<any[]>([]);
+  const [smsTemplate, setSmsTemplate] = useState<string>("Dear {name}, this is a friendly reminder that you have an outstanding rent balance of KES {amount} for Room {room} at {property}. Please clear your balance as soon as possible via M-PESA. Thank you.");
+  const [isSendingSms, setIsSendingSms] = useState(false);
+  const [smsTargetMode, setSmsTargetMode] = useState<"all_unpaid" | "single">("all_unpaid");
+  const [smsSingleTenantId, setSmsSingleTenantId] = useState<string>("");
+  const [smsSuccessMessage, setSmsSuccessMessage] = useState<string | null>(null);
+  const [smsErrorMessage, setSmsErrorMessage] = useState<string | null>(null);
 
   // Deletion Terms & Confirmation Overlay State
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
@@ -213,8 +222,21 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
         setMaintenance(loadedTickets);
       }
 
+      // 5. Fetch SMS Logs
+      let smsCount = 0;
+      try {
+        const smsResponse = await fetch("/api/sms/logs");
+        if (smsResponse.ok) {
+          const smsList = await smsResponse.json();
+          setSmsLogs(smsList);
+          smsCount = smsList.length;
+        }
+      } catch (e) {
+        console.warn("SMS Logs loading failed", e);
+      }
+
       // Append log entry cleanly
-      const logStr = `[${new Date().toLocaleTimeString()}] Auto-Sync: Verified ${loadedRooms.length} rooms, ${loadedTenants.length} tenants, ${loadedPayments.length} payments, and ${loadedTickets.length} maintenance tickets.`;
+      const logStr = `[${new Date().toLocaleTimeString()}] Auto-Sync: Verified ${loadedRooms.length} rooms, ${loadedTenants.length} tenants, ${loadedPayments.length} payments, ${loadedTickets.length} tickets, and ${smsCount} communication remnants.`;
       setSyncLogs(prev => [logStr, ...prev.slice(0, 49)]);
     } catch (error) {
       console.error("Error fetching admin telemetry metrics:", error);
@@ -271,8 +293,8 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
       setDeleteTarget(null);
       setTermsAccepted(false);
 
+      onRefreshProperties();
       if (deleteTarget.type === "property") {
-        onRefreshProperties();
         const remaining = properties.filter(p => p.property_id !== deleteTarget.id);
         if (remaining.length > 0) {
           setSelectedPropertyId(remaining[0].property_id);
@@ -359,6 +381,7 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
       setNewRoomRent("");
       setNewRoomUtil("");
       fetchPropertySpecifics();
+      onRefreshProperties();
       alert("Apartment unit registered as Vacant.");
     } catch (err: any) {
       setRoomError(err.message || "Error creating unit.");
@@ -404,6 +427,7 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
       setNewTenantName("");
       setNewTenantPhone("");
       fetchPropertySpecifics();
+      onRefreshProperties();
     } catch (err: any) {
       setTenantError(err.message || "Error register tenant.");
     }
@@ -512,6 +536,7 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
 
       alert("Tenancy terminated successfully. Apartment unit status set to Vacant.");
       fetchPropertySpecifics();
+      onRefreshProperties();
     } catch (err: any) {
       alert(err.message || "Error terminating tenancy.");
     }
@@ -528,6 +553,7 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
 
       if (response.ok) {
         fetchPropertySpecifics();
+        onRefreshProperties();
       } else {
         const d = await response.json();
         alert(d.error || "Repair update failed");
@@ -566,6 +592,7 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
       setPaySuccess("Cleared amount log logged successfully inside system ledger.");
       setManualPayAmount("");
       fetchPropertySpecifics();
+      onRefreshProperties();
     } catch (err: any) {
       setPayError(err.message);
     }
@@ -592,10 +619,62 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
 
       alert(`Lipa Na M-Pesa STK push popup sent on-behalf to ${tenantRef.full_name} (+254${tenantRef.phone_number.slice(-9)}) KES ${Math.round(tenantRef.billing?.outstandingBalance)}`);
       fetchPropertySpecifics();
+      onRefreshProperties();
     } catch (err: any) {
       alert(`Handshake rejected: ${err.message || "Verification fail"}`);
     } finally {
       setStkTriggering(null);
+    }
+  };
+
+  // SMS Broadcast Handler for Africa's Talking integration and automated triggers
+  const handleSendSMS = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSendingSms(true);
+    setSmsSuccessMessage(null);
+    setSmsErrorMessage(null);
+
+    try {
+      const payload: any = {
+        custom_message: smsTemplate,
+      };
+
+      if (smsTargetMode === "all_unpaid") {
+        payload.tenant_ids = []; // Empty list sends to all unpaid/partially paid tenants
+      } else {
+        if (!smsSingleTenantId) {
+          throw new Error("Please select a specific tenant to remind.");
+        }
+        payload.tenant_ids = [smsSingleTenantId];
+      }
+
+      const response = await fetch("/api/sms/remind", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || "SMS broadcast failed.");
+      }
+
+      if (data.success) {
+        if (data.results && data.results.length > 0) {
+          const names = data.results.map((r: any) => `${r.tenant_name} (${r.status})`).join(", ");
+          setSmsSuccessMessage(`Reminder notifications processed successfully! Targets notified: ${data.results.length} tenants. [${names}]`);
+        } else {
+          setSmsSuccessMessage("Reminder check complete. No tenants currently match the reminder criteria (outstanding > 0).");
+        }
+        // Refresh specific info and logs
+        fetchPropertySpecifics();
+      } else {
+        setSmsErrorMessage(data.error || "Failed to trigger alerts.");
+      }
+    } catch (err: any) {
+      setSmsErrorMessage(err.message || "An unexpected communication error occurred.");
+    } finally {
+      setIsSendingSms(false);
     }
   };
 
@@ -760,6 +839,16 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
             {pendingTicketsCount > 0 && (
               <span className="absolute right-2 px-1.5 py-0.5 bg-rose-500 text-white font-mono text-[9px] font-bold rounded-full">{pendingTicketsCount}</span>
             )}
+          </button>
+
+          <button
+            onClick={() => handleTabClick("sms")}
+            className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold rounded-lg transition-all text-left ${
+              activeTab === "sms" ? "sidebar-active text-white shadow-xs" : "text-slate-400 hover:text-white hover:bg-slate-800"
+            }`}
+          >
+            <MessageSquare className="w-4 h-4" />
+            <span>Communications Desk</span>
           </button>
 
           {!isCaretaker && (
@@ -2092,6 +2181,223 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
           </div>
         )}
 
+        {/* 9. COMMUNICATIONS DESK TAB */}
+        {activeTab === "sms" && (
+          <div className="space-y-6 text-left border-0 focus:outline-none">
+            {/* Header Banner */}
+            <div className="bg-slate-900 rounded-3xl p-6 sm:p-8 text-white relative overflow-hidden border border-slate-800 shadow-xl">
+              <div className="absolute top-0 right-0 w-96 h-96 bg-blue-500/10 rounded-full blur-3xl pointer-events-none"></div>
+              
+              <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6 relative z-10">
+                <div className="space-y-2">
+                  <div className="inline-flex items-center gap-2 px-3 py-1 bg-blue-500/15 rounded-full border border-blue-500/20 text-blue-400 font-mono text-[10px] font-bold uppercase tracking-wider">
+                    <span className="w-1.5 h-1.5 bg-blue-400 rounded-full animate-pulse"></span>
+                    Africa's Talking & M-Pesa Integrated Communications
+                  </div>
+                  <h2 className="text-2xl font-extrabold font-display tracking-tight text-white">
+                    Tenant Communications & Alerts Desk
+                  </h2>
+                  <p className="text-slate-400 text-xs max-w-xl leading-relaxed">
+                    Trigger customized, automated SMS rent reminders via Africa's Talking SMS API. You can broadcast to all tenants with uncleared bills instantly.
+                  </p>
+                </div>
+                
+                {/* Statistics Box */}
+                <div className="p-4 bg-slate-800/80 backdrop-blur-xs rounded-2xl border border-slate-700/50 text-center min-w-[200px]">
+                  <span className="text-[10px] uppercase font-bold text-slate-400 tracking-widest block mb-1">Uncleared Tenants</span>
+                  <div className="font-mono text-2xl font-black text-rose-400 tracking-wider">
+                    {tenants.filter(t => (t.billing?.outstandingBalance || 0) > 0).length}
+                  </div>
+                  <span className="text-[9px] text-slate-500 font-mono block mt-1.5">Unnotified Traces Pending</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+              {/* Reminder Form Container */}
+              <div className="lg:col-span-5 bg-white border border-slate-200 rounded-3xl p-6 shadow-xs high-contrast-card">
+                <h3 className="font-bold text-sm text-slate-900 font-display flex items-center gap-2 mb-2">
+                  <MessageSquare className="w-5 h-5 text-blue-500" />
+                  <span>Draft Reminder Broadcast</span>
+                </h3>
+                <p className="text-xs text-slate-500 mb-4 font-sans">
+                  Target unpaid tenants under the active plot. Your message automatically substitutes tenant fields.
+                </p>
+
+                <form onSubmit={handleSendSMS} className="space-y-4">
+                  {/* Target Select */}
+                  <div>
+                    <label className="block text-[10px] text-slate-700 font-bold uppercase mb-1">Recipient Option</label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setSmsTargetMode("all_unpaid")}
+                        className={`py-2 px-3 text-xs font-semibold rounded-lg border text-center transition-all cursor-pointer ${
+                          smsTargetMode === "all_unpaid"
+                            ? "bg-blue-600 border-blue-600 text-white shadow-xs"
+                            : "bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100"
+                        }`}
+                      >
+                        ⚠️ All Unpaid Tenants ({tenants.filter(t => (t.billing?.outstandingBalance || 0) > 0).length})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSmsTargetMode("single");
+                          if (tenants.length > 0 && !smsSingleTenantId) {
+                            setSmsSingleTenantId(tenants[0].tenant_id);
+                          }
+                        }}
+                        className={`py-2 px-3 text-xs font-semibold rounded-lg border text-center transition-all cursor-pointer ${
+                          smsTargetMode === "single"
+                            ? "bg-blue-600 border-blue-600 text-white shadow-xs"
+                            : "bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100"
+                        }`}
+                      >
+                        👤 Single Tenant
+                      </button>
+                    </div>
+                  </div>
+
+                  {smsTargetMode === "single" && (
+                    <div>
+                      <label htmlFor="sms-tenant-select" className="block text-[10px] text-slate-700 font-bold uppercase mb-1">Select Leased Tenant</label>
+                      <select
+                        id="sms-tenant-select"
+                        value={smsSingleTenantId}
+                        onChange={(e) => setSmsSingleTenantId(e.target.value)}
+                        className="w-full bg-slate-50 border border-slate-200 text-slate-850 rounded-lg py-2 px-3 text-xs focus:ring-1 focus:ring-blue-500 text-left cursor-pointer"
+                      >
+                        {tenants.map(t => (
+                          <option key={t.tenant_id} value={t.tenant_id}>
+                            {t.full_name} ({t.assigned_room_number}) - Bal: KES {Math.round(t.billing?.outstandingBalance || 0)}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+
+                  {/* Template Textarea */}
+                  <div>
+                    <label htmlFor="sms-template-input" className="block text-[10px] text-slate-700 font-bold uppercase mb-1">Rent Reminder Message Draft</label>
+                    <textarea
+                      id="sms-template-input"
+                      rows={5}
+                      value={smsTemplate}
+                      onChange={(e) => setSmsTemplate(e.target.value)}
+                      placeholder="Dear {name}, friendly reminder that..."
+                      className="w-full bg-slate-50 border border-slate-200 text-slate-850 rounded-lg py-2 px-3 text-xs font-sans focus:ring-1 focus:ring-blue-500"
+                    />
+                  </div>
+
+                  {/* Placeholder references panel */}
+                  <div className="bg-slate-50 p-3 rounded-lg border border-slate-150 text-[11px] text-slate-550 leading-relaxed font-sans space-y-1">
+                    <p className="font-bold text-slate-700 mb-0.5">Substitution Placeholders:</p>
+                    <div className="grid grid-cols-2 gap-1 font-mono text-[9px]">
+                      <div><strong className="text-blue-600">{`{name}`}</strong>: Tenant Full Name</div>
+                      <div><strong className="text-blue-600">{`{amount}`}</strong>: Uncleared Balance</div>
+                      <div><strong className="text-blue-600">{`{room}`}</strong>: Leased Room</div>
+                      <div><strong className="text-blue-600">{`{property}`}</strong>: Complex Name</div>
+                      <div className="col-span-2"><strong className="text-blue-600">{`{cycle}`}</strong>: Billing Period Cycles</div>
+                    </div>
+                  </div>
+
+                  {/* Action Button */}
+                  <button
+                    type="submit"
+                    id="initiate-sms-btn"
+                    disabled={isSendingSms}
+                    className="w-full py-2.5 bg-blue-600 hover:bg-blue-550 disabled:bg-blue-250 text-white font-bold text-xs uppercase tracking-widest rounded-lg shadow-md hover:shadow-blue-500/10 transition-all font-mono cursor-pointer flex items-center justify-center gap-2"
+                  >
+                    {isSendingSms ? "Broadcasting Reminders..." : "✓ Send Custom SMS Reminders"}
+                  </button>
+
+                  {/* Alerts alerts */}
+                  {smsSuccessMessage && (
+                    <div id="sms-success" className="p-3 bg-emerald-50 border border-emerald-155 rounded-lg text-emerald-800 text-xs text-left leading-relaxed">
+                      {smsSuccessMessage}
+                    </div>
+                  )}
+
+                  {smsErrorMessage && (
+                    <div id="sms-error" className="p-3 bg-rose-50 border border-rose-155 rounded-lg text-rose-800 text-xs text-left leading-relaxed">
+                      {smsErrorMessage}
+                    </div>
+                  )}
+                </form>
+              </div>
+
+              {/* SMS Logs Ledger Board */}
+              <div className="lg:col-span-7 bg-white border border-slate-200 rounded-3xl p-6 shadow-xs high-contrast-card flex flex-col justify-between">
+                <div>
+                  <h3 className="font-bold text-sm text-slate-900 font-display flex items-center gap-2 mb-2">
+                    <Smartphone className="w-5 h-5 text-emerald-500" />
+                    <span>Communications Ledger & SMS Logs</span>
+                  </h3>
+                  <p className="text-xs text-slate-500 mb-4 font-sans">
+                    Historical record of dispatch updates, custom notices, and rent demands generated by this active portal.
+                  </p>
+
+                  <div className="border border-slate-150 rounded-xl overflow-hidden shadow-xs">
+                    <div className="overflow-x-auto max-h-[360px]">
+                      <table className="w-full text-left text-xs bg-transparent border-collapse font-sans">
+                        <thead>
+                          <tr className="bg-slate-50 border-b border-slate-155 text-slate-500 font-bold">
+                            <th className="p-3">Logged Date</th>
+                            <th className="p-3">Tenant Details</th>
+                            <th className="p-3">Message Snippet</th>
+                            <th className="p-3">Status</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {smsLogs.length === 0 ? (
+                            <tr>
+                              <td colSpan={4} className="p-8 text-center text-slate-400 italic">
+                                No previous tenant SMS updates found inside records database.
+                              </td>
+                            </tr>
+                          ) : (
+                            smsLogs.map((log: any) => (
+                              <tr key={log.id} className="border-b border-slate-100 hover:bg-slate-50/50 transition-colors">
+                                <td className="p-3 text-[10px] text-slate-500 font-mono whitespace-nowrap">
+                                  {new Date(log.timestamp).toLocaleString("en-KE", { hour12: false })}
+                                </td>
+                                <td className="p-3 font-medium text-slate-850">
+                                  <div className="font-semibold">{log.tenant_name}</div>
+                                  <div className="text-[10px] text-slate-400 font-mono">{log.phone_number}</div>
+                                </td>
+                                <td className="p-3 text-slate-650 max-w-xs truncate" title={log.message}>
+                                  {log.message}
+                                </td>
+                                <td className="p-3 whitespace-nowrap">
+                                  <span className={`px-2 py-0.5 rounded-full inline-flex text-[9px] font-bold tracking-wider uppercase ${
+                                    log.status === "Sent"
+                                      ? "bg-emerald-50 text-emerald-700 border border-emerald-150"
+                                      : log.status === "Simulated"
+                                      ? "bg-blue-55 text-blue-700 border border-blue-150"
+                                      : "bg-rose-50 text-rose-700 border border-rose-155"
+                                  }`}>
+                                    {log.status === "Sent" ? "✓ Sent" : log.status === "Simulated" ? "Simulation" : "Failed"}
+                                  </span>
+                                </td>
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="pt-4 border-t border-slate-100 flex items-center justify-between text-xs text-slate-450 mt-4 leading-relaxed font-sans">
+                  <span>Target API Integration: <strong className="text-emerald-700">Africa's Talking SMS API</strong></span>
+                  <span>Delivery Tracking: <strong className="text-slate-705">Database Persistent</strong></span>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* 8. SYSTEM SYNC CLOCK AUDITOR TAB */}
         {activeTab === "clock" && (
           <div className="space-y-6 text-left">
@@ -2172,7 +2478,7 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
                     <strong>2. Safaricom M-Pesa Sandboxing:</strong> Safaricom STK Push trigger handshakes on Lipa Na M-Pesa channels execute instantly. Simulators will report simulated payments onto backend callback listeners.
                   </p>
                   <p>
-                    <strong>3. Data Authorization:</strong> Collins (collinskosgei32@gmail.com) is designated as the primary authorized platform super-administrator with root privileges to terminate leases, clear tenants, and register/delete Plots.
+                    <strong>3. Data Authorization:</strong> Collins (collinskosgei32@gmail.com) and Kireu Executive (kireuagencyltd1@gmail.com) are designated as the primary authorized platform super-administrators with root privileges to terminate leases, clear tenants, and register/delete Plots.
                   </p>
                   <p>
                     <strong>4. Caretaker Limitations:</strong> Caretakers or caretewives have read-only access strictly fenced to their assigned property. Deletion actions are strictly disabled for role profiles other than Super-Admin.

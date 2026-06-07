@@ -69,3 +69,14 @@ export interface TenantSession {
   property_id: string;
   room_number: string;
 }
+
+export interface SMSLog {
+  id: string;
+  tenant_id: string;
+  tenant_name: string;
+  phone_number: string;
+  message: string;
+  status: 'Sent' | 'Simulated' | 'Failed';
+  timestamp: string;
+  error?: string;
+}

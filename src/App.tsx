@@ -12,22 +12,36 @@ export default function App() {
   const [tenantProfile, setTenantProfile] = useState<Tenant | null>(null);
   const [ready, setReady] = useState(false);
 
+  const [fetchError, setFetchError] = useState<boolean>(false);
+
   useEffect(() => {
     fetchProperties();
     restoreSessions();
   }, []);
 
-  const fetchProperties = async () => {
+  const fetchProperties = async (retryCount = 0) => {
     try {
+      setFetchError(false);
       const response = await fetch("/api/properties");
       if (response.ok) {
         const list = await response.json();
         setProperties(list);
+      } else {
+        throw new Error(`Server returned status ${response.status}`);
       }
-    } catch (err) {
-      console.error("Failed to load estate properties list:", err);
+    } catch (err: any) {
+      console.warn(`Failed to load estate properties list (try ${retryCount + 1}/4):`, err);
+      if (retryCount < 3) {
+        setTimeout(() => {
+          fetchProperties(retryCount + 1);
+        }, 1500);
+      } else {
+        setFetchError(true);
+      }
     } finally {
-      setReady(true);
+      if (retryCount === 3 || !fetchError) {
+        setReady(true);
+      }
     }
   };
 
@@ -70,34 +84,62 @@ export default function App() {
     localStorage.removeItem("prop_tenant_profile");
   };
 
-  if (!ready) {
+  if (!ready || (fetchError && properties.length === 0)) {
     return (
-      <div className="min-h-screen bg-slate-950 flex flex-col justify-center items-center relative text-white">
+      <div className="min-h-screen bg-slate-950 flex flex-col justify-center items-center relative text-white overflow-hidden">
         <div 
-          className="absolute inset-0 bg-cover bg-center scale-105 pointer-events-none transition-all duration-700 z-0"
+          className="absolute -inset-10 bg-cover bg-center pointer-events-none transition-all duration-700 z-0"
           style={{
             backgroundImage: `url("https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?auto=format&fit=crop&w=1600&q=80")`,
-            filter: "blur(14px) brightness(0.25)"
+            filter: "blur(14px) brightness(0.25)",
+            transform: "translate3d(0, 0, 0)",
+            willChange: "transform"
           }}
         />
         <div className="absolute inset-0 bg-slate-950/80 pointer-events-none z-0" />
-        <div id="boot-loader" className="flex flex-col items-center gap-3 relative z-10 animate-pulse">
-          <Building2 className="w-10 h-10 text-blue-400" />
-          <p className="text-[10px] text-slate-400 font-mono tracking-widest uppercase">Initializing Kireu Agencies Desk...</p>
-        </div>
+        
+        {fetchError && properties.length === 0 ? (
+          <div id="fetch-error-view" className="flex flex-col items-center gap-4 relative z-10 max-w-md text-center p-6 bg-slate-900/50 backdrop-blur-md rounded-xl border border-white/10 shadow-2xl">
+            <div className="w-12 h-12 rounded-full bg-red-400/10 flex items-center justify-center border border-red-500/20 text-red-400 animate-pulse">
+              <Building2 className="w-6 h-6" />
+            </div>
+            <h2 className="text-lg font-semibold text-slate-100 font-sans tracking-tight">Gateway Connection Offline</h2>
+            <p className="text-xs text-slate-400 leading-relaxed font-sans">
+              We encountered a network fetch error while loading estate properties. This transient issue can happen if the backend server is busy or booting.
+            </p>
+            <button
+              id="retry-fetch-btn"
+              onClick={() => {
+                setReady(false);
+                setFetchError(false);
+                fetchProperties(0);
+              }}
+              className="mt-2 px-5 py-2 bg-blue-600 hover:bg-blue-500 text-white font-medium text-xs rounded-lg shadow-lg hover:shadow-blue-500/20 transition-all duration-200 uppercase tracking-widest font-mono cursor-pointer"
+            >
+              Retry Connection
+            </button>
+          </div>
+        ) : (
+          <div id="boot-loader" className="flex flex-col items-center gap-3 relative z-10 animate-pulse">
+            <Building2 className="w-10 h-10 text-blue-400" />
+            <p className="text-[10px] text-slate-400 font-mono tracking-widest uppercase">Initializing Kireu Agencies Desk...</p>
+          </div>
+        )}
       </div>
     );
   }
 
   // Render global dark container with blurry background image
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 relative font-sans selection:bg-blue-500 selection:text-white">
+    <div className="min-h-screen bg-slate-950 text-slate-100 relative font-sans selection:bg-blue-500 selection:text-white overflow-x-hidden">
       {/* High-quality blurry dark background image globally */}
       <div 
-        className="fixed inset-0 bg-cover bg-center scale-105 pointer-events-none transition-all duration-700 z-0"
+        className="fixed -inset-10 bg-cover bg-center pointer-events-none transition-all duration-700 z-0"
         style={{
           backgroundImage: `url("https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?auto=format&fit=crop&w=1600&q=80")`,
-          filter: "blur(14px) brightness(0.35)"
+          filter: "blur(14px) brightness(0.35)",
+          transform: "translate3d(0, 0, 0)",
+          willChange: "transform"
         }}
       />
       <div className="fixed inset-0 bg-gradient-to-b from-slate-950/80 via-slate-900/85 to-slate-950/90 z-0 pointer-events-none" />

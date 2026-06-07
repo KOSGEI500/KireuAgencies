@@ -117,14 +117,23 @@ export default function AuthScreens({ properties, onAdminLogin, onTenantLogin }:
         })
       });
 
-      const data = await response.json();
+      let data: any = {};
+      const responseText = await response.text();
+      try {
+        if (responseText) {
+          data = JSON.parse(responseText);
+        }
+      } catch (parseErr) {
+        data = { error: "Access Denied: You are not authorized or registered on this system." };
+      }
+
       if (!response.ok) {
-        throw new Error(data.error || "User profile not available. Google email access denied.");
+        throw new Error(data.error || "Access Denied: You are not authorized or registered on this system.");
       }
 
       onAdminLogin(data.session);
     } catch (err: any) {
-      console.error("Firebase/Google Admin Auth Error:", err);
+      console.warn("Google Admin Auth Status:", err.message || err);
       if (err.code === "auth/popup-closed-by-user") {
         setError("Sign-in popup was closed before completing authentication.");
       } else {
@@ -136,20 +145,10 @@ export default function AuthScreens({ properties, onAdminLogin, onTenantLogin }:
   };
 
   return (
-    <div className={`bg-slate-950 text-slate-100 flex flex-col justify-between transition-all duration-300 relative font-sans ${
+    <div className={`bg-transparent text-slate-100 flex flex-col justify-between transition-all duration-300 relative font-sans ${
       currentPage === "landing" ? "h-screen max-h-screen overflow-hidden" : "min-h-screen overflow-x-hidden"
     }`}>
       
-      {/* High-quality blurry dark background image for both views */}
-      <div 
-        className="absolute inset-0 bg-cover bg-center scale-105 pointer-events-none transition-all duration-700 z-0"
-        style={{
-          backgroundImage: `url("https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?auto=format&fit=crop&w=1600&q=80")`,
-          filter: "blur(14px) brightness(0.4)"
-        }}
-      />
-      <div className="absolute inset-0 bg-gradient-to-b from-slate-950/80 via-slate-900/85 to-slate-950/90 z-0 pointer-events-none" />
-
       {/* HEADER BAR */}
       <header className="w-full py-4 px-6 sticky top-0 z-40 flex items-center justify-between border-b border-white/5 bg-slate-950/20 backdrop-blur-md">
         <div className="flex items-center gap-2.5">
