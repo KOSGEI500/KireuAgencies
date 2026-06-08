@@ -24,6 +24,31 @@ export default function App() {
     fetchProperties();
     restoreSessions();
     restoreAccessibility();
+
+    // Prevent right click (context menu) of the website
+    const handleContextMenu = (e: MouseEvent) => {
+      e.preventDefault();
+    };
+
+    // Prevent selecting words/text on the website
+    const handleSelectStart = (e: Event) => {
+      e.preventDefault();
+    };
+
+    window.addEventListener("contextmenu", handleContextMenu);
+    window.addEventListener("selectstart", handleSelectStart);
+
+    // Apply select-none to document element as a fallback reinforcement
+    const docStyle = document.documentElement.style as any;
+    docStyle.userSelect = "none";
+    docStyle.webkitUserSelect = "none";
+    docStyle.MozUserSelect = "none";
+    docStyle.msUserSelect = "none";
+
+    return () => {
+      window.removeEventListener("contextmenu", handleContextMenu);
+      window.removeEventListener("selectstart", handleSelectStart);
+    };
   }, []);
 
   const fetchProperties = async (retryCount = 0) => {

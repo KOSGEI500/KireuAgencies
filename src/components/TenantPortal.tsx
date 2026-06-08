@@ -1050,28 +1050,6 @@ Thank you for your prompt transaction. Please keep this slip for reference.
           </div>
         </div>
 
-        {/* Dynamic Navigation Indicator / Breadcrumb when focused on a tab */}
-        {activeTab !== "all" && (
-          <div className="flex items-center justify-between bg-slate-900/40 p-3.5 rounded-xl border border-white/10 animate-in fade-in duration-200 text-left">
-            <div className="flex items-center gap-2">
-              <span className="text-slate-400 text-xs font-semibold uppercase tracking-wider">Filtered Action View:</span>
-              <span className="text-xs bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 font-bold px-2.5 py-1 rounded-lg capitalize">
-                {activeTab === "billing" && "🔢 Billing Summary"}
-                {activeTab === "mpesa" && "📱 Instant Safaricom M-Pesa STK Push"}
-                {activeTab === "receipts" && "🏢 Cleared Payment Receipts & Slips"}
-                {activeTab === "repairs" && "🛠️ On-Site Repair Request Desk"}
-                {activeTab === "history" && "🧰 Filed Repair History Logs"}
-                {activeTab === "alerts" && "🔔 Announcements Alerts Reception"}
-              </span>
-            </div>
-            <button
-              onClick={() => setActiveTab("all")}
-              className="text-xs text-emerald-400 hover:text-emerald-300 font-semibold flex items-center gap-1 cursor-pointer underline hover:no-underline font-mono"
-            >
-              Back to Dweller Profile 👤
-            </button>
-          </div>
-        )}
 
         {/* Dynamic Layout Engine */}
         {activeTab !== "all" ? (
