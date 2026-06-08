@@ -239,41 +239,53 @@ export default function AuthScreens({ properties, onAdminLogin, onTenantLogin }:
       currentPage === "landing" ? "h-screen max-h-screen overflow-hidden" : "min-h-screen overflow-x-hidden"
     }`}>
       
-      {/* HEADER BAR */}
-      <header className="w-full py-4 px-6 sticky top-0 z-40 flex items-center justify-between border-b border-white/5 bg-slate-950/20 backdrop-blur-md">
-        <div className="flex items-center gap-2.5">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-blue-700 to-indigo-600 text-white flex items-center justify-center shadow-lg">
-            <Building className="w-5.5 h-5.5" />
+      {/* NAVBAR HEADER BAR */}
+      <header className="w-full border-b border-white/5 bg-slate-900/60 sticky top-0 z-50 backdrop-blur-md transition-all duration-300">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <img 
+              src="/src/assets/images/kireu_logo_1780960611389.png" 
+              alt="kireu houses Logo" 
+              className="h-9 w-9 object-contain rounded-xl shadow-md border border-white/10"
+              referrerPolicy="no-referrer"
+              onError={(e) => { (e.target as HTMLElement).style.display = "none"; }}
+            />
+            <div className="text-left">
+              <span className="font-extrabold text-lg sm:text-xl tracking-tight text-white block">kireu houses</span>
+              <span className="text-[9px] font-mono font-bold text-emerald-400 uppercase tracking-widest leading-none mt-0.5 block">Premium Spaces</span>
+            </div>
           </div>
-          <div className="text-left">
-            <h1 className="text-sm font-bold tracking-tight font-display text-white">KIREU AGENCIES</h1>
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-300">Smart Estates Kenya</p>
-          </div>
-        </div>
+          
+          <nav className="hidden md:flex space-x-6">
+            <span className="text-xs font-semibold text-slate-350 hover:text-white transition-all cursor-pointer font-mono uppercase tracking-wider">Properties</span>
+            <span className="text-xs font-semibold text-slate-350 hover:text-white transition-all cursor-pointer font-mono uppercase tracking-wider">About Us</span>
+            <span className="text-xs font-semibold text-slate-350 hover:text-white transition-all cursor-pointer font-mono uppercase tracking-wider">Contact</span>
+          </nav>
 
-        {currentPage === "landing" ? (
-          <button 
-            onClick={() => {
-              setCurrentPage("login");
-              setError(null);
-            }}
-            className="px-4 py-2 text-xs font-bold tracking-wider uppercase bg-white/10 hover:bg-white/20 active:scale-95 text-white border border-white/25 rounded-xl backdrop-blur-md transition-all shadow-md cursor-pointer flex items-center gap-1.5 hover:border-white/40"
-          >
-            <LogIn className="w-3.5 h-3.5 text-blue-300" />
-            <span>Login</span>
-          </button>
-        ) : (
-          <button 
-            onClick={() => {
-              setCurrentPage("landing");
-              setError(null);
-            }}
-            className="flex items-center gap-1 px-3 py-1.5 text-xs text-white hover:text-white/85 font-bold bg-white/10 hover:bg-white/15 border border-white/10 rounded-lg transition-all"
-          >
-            <ArrowLeft className="w-3.5 h-3.5 text-blue-300" />
-            <span>Go Back</span>
-          </button>
-        )}
+          {currentPage === "landing" ? (
+            <button 
+              onClick={() => {
+                setCurrentPage("login");
+                setError(null);
+              }}
+              className="px-4 py-2 text-[11px] font-bold tracking-widest uppercase bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 active:scale-95 text-white rounded-xl transition-all shadow-md cursor-pointer flex items-center gap-1.5"
+            >
+              <LogIn className="w-3.5 h-3.5 text-emerald-300" />
+              <span>Login</span>
+            </button>
+          ) : (
+            <button 
+              onClick={() => {
+                setCurrentPage("landing");
+                setError(null);
+              }}
+              className="flex items-center gap-1.5 px-3.5 py-2 text-[11px] font-bold tracking-widest uppercase bg-white/10 hover:bg-white/15 text-white hover:text-white/85 border border-white/10 rounded-xl transition-all"
+            >
+              <ArrowLeft className="w-3.5 h-3.5 text-emerald-400" />
+              <span>Go Back</span>
+            </button>
+          )}
+        </div>
       </header>
 
       {/* LANDING PAGE STEP VIEW */}
@@ -281,16 +293,16 @@ export default function AuthScreens({ properties, onAdminLogin, onTenantLogin }:
         <main className="flex-grow flex flex-col items-center justify-center text-center p-4 sm:p-8 lg:p-12 relative z-10 max-w-4xl w-full mx-auto space-y-8 animate-in fade-in duration-700">
           <div className="space-y-4">
             <div className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white/5 border border-white/10 rounded-full text-slate-200 font-mono text-[9px] font-bold uppercase tracking-widest backdrop-blur-sm shadow-inner">
-              <Sparkles className="w-3.5 h-3.5 text-blue-300 animate-pulse" />
+              <Sparkles className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
               Verified Luxury Living
             </div>
 
             <h2 className="text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-extrabold font-display text-white tracking-wide uppercase leading-tight drop-shadow-md">
-              Welcome to <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-300 via-indigo-200 to-white">Kireu Agencies</span>
+              Welcome to <span className="text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 via-teal-300 to-white">kireu houses</span>
             </h2>
 
             <p className="text-slate-300/90 text-sm sm:text-base md:text-lg lg:text-xl font-light tracking-widest max-w-2xl mx-auto leading-relaxed drop-shadow-sm uppercase">
-              Choose your apartment today
+              Find premium spaces and modern living options
             </p>
           </div>
 
@@ -299,14 +311,14 @@ export default function AuthScreens({ properties, onAdminLogin, onTenantLogin }:
               onClick={() => setShowTerms(true)}
               className="w-full sm:w-1/2 px-6 py-3.5 bg-white/10 hover:bg-white/20 active:scale-[0.98] text-white border border-white/20 rounded-2xl backdrop-blur-md transition-all shadow-lg cursor-pointer flex items-center justify-center gap-2 hover:border-white/40 font-bold uppercase text-[10px] tracking-wider"
             >
-              <Info className="w-4 h-4 text-blue-300" />
+              <Info className="w-4 h-4 text-emerald-400" />
               <span>Terms &amp; Conditions</span>
             </button>
             <button 
               onClick={() => setShowPrivacy(true)}
               className="w-full sm:w-1/2 px-6 py-3.5 bg-white/10 hover:bg-white/20 active:scale-[0.98] text-white border border-white/20 rounded-2xl backdrop-blur-md transition-all shadow-lg cursor-pointer flex items-center justify-center gap-2 hover:border-white/40 font-bold uppercase text-[10px] tracking-wider"
             >
-              <ShieldCheck className="w-4 h-4 text-emerald-300" />
+              <ShieldCheck className="w-4 h-4 text-emerald-400" />
               <span>Privacy Policy</span>
             </button>
           </div>
@@ -323,7 +335,7 @@ export default function AuthScreens({ properties, onAdminLogin, onTenantLogin }:
               <div className="text-left mb-6 flex justify-between items-start">
                 <div>
                   <h3 className="text-xl font-extrabold font-display text-white">
-                    Sign In to Kireu Agencies
+                    Sign In to kireu houses
                   </h3>
                   <p className="text-[11px] font-semibold text-slate-350 mt-0.5">
                     Provide your credentials below to access your portal.
@@ -517,13 +529,21 @@ export default function AuthScreens({ properties, onAdminLogin, onTenantLogin }:
       )}
 
       {/* FOOTER METRICS INFO */}
-      <footer className="py-4 border-t border-white/5 bg-slate-950/40 text-slate-400 text-[10px] font-semibold flex flex-col sm:flex-row items-center justify-between px-6 gap-2 relative z-10">
-        <div className="flex items-center gap-1">
-          <Smartphone className="w-3.5 h-3.5 text-blue-500" />
-          <span>Optimized for fast mobile loading on smartphone browsers</span>
-        </div>
-        <div>
-          <span>© 2026 Kireu Agencies Ltd. All Rights Reserved.</span>
+      <footer className="py-8 border-t border-white/5 bg-slate-950/60 text-slate-300 mt-auto relative z-10 font-sans">
+        <div className="max-w-7xl mx-auto w-full px-6 flex flex-col md:flex-row justify-between items-center gap-6">
+          <div className="text-left space-y-1">
+            <p className="text-sm">
+              &copy; {new Date().getFullYear()} <strong>kireu houses</strong>. All rights reserved.
+            </p>
+            <p className="text-xs text-slate-400 max-w-md">
+              Delivering modern housing, structural management, and premium real estate development.
+            </p>
+          </div>
+          <div className="flex items-center gap-3 text-xs font-semibold uppercase tracking-wider font-mono text-slate-400">
+            <button onClick={() => setShowPrivacy(true)} className="hover:text-emerald-400 transition cursor-pointer">Privacy Policy</button>
+            <span className="text-slate-700">•</span>
+            <button onClick={() => setShowTerms(true)} className="hover:text-emerald-450 transition cursor-pointer">Terms of Service</button>
+          </div>
         </div>
       </footer>
 
@@ -699,8 +719,8 @@ export default function AuthScreens({ properties, onAdminLogin, onTenantLogin }:
             </div>
 
             <div className="space-y-4 text-[11px] text-slate-350 font-semibold leading-relaxed">
-              <p className="border-l-2 border-blue-500 pl-3 italic text-slate-400">
-                Welcome to Kireu Agencies. By using this digital platform, you agree to comply with and be bound by the following formal administrative terms.
+              <p className="border-l-2 border-emerald-500 pl-3 italic text-slate-400">
+                Welcome to kireu houses. By using this digital platform, you agree to comply with and be bound by the following formal administrative terms.
               </p>
 
               <div className="space-y-1.5">
@@ -763,7 +783,7 @@ export default function AuthScreens({ properties, onAdminLogin, onTenantLogin }:
 
             <div className="space-y-4 text-[11px] text-slate-350 font-semibold leading-relaxed">
               <p className="border-l-2 border-emerald-500 pl-3 italic text-slate-400">
-                Your digital security is our highest priority. This policy details how Kireu Agencies collects, manages, and secures your platform credentials.
+                Your digital security is our highest priority. This policy details how kireu houses collects, manages, and secures your platform credentials.
               </p>
 
               <div className="space-y-1.5">

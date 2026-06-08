@@ -193,8 +193,14 @@ export default function App() {
           </div>
         ) : (
           <div id="boot-loader" className="flex flex-col items-center gap-3 relative z-10 animate-pulse">
-            <Building2 className="w-10 h-10 text-blue-400" />
-            <p className="text-[10px] text-slate-400 font-mono tracking-widest uppercase">Initializing Kireu Agencies Desk...</p>
+            <img 
+              src="/src/assets/images/kireu_logo_1780960611389.png" 
+              alt="kireu houses Loading" 
+              className="w-10 h-10 object-contain rounded-xl shadow-md border border-white/10"
+              referrerPolicy="no-referrer"
+              onError={(e) => { (e.target as HTMLElement).style.display = "none"; }}
+            />
+            <p className="text-[10px] text-emerald-400 font-mono tracking-widest uppercase">Initializing kireu houses Desk...</p>
           </div>
         )}
       </div>

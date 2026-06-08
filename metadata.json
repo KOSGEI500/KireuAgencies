@@ -1,6 +1,6 @@
 {
-  "name": "Multi-Property Rental Management",
-  "description": "A scalable multi-property rental management app featuring dynamic branding, tenant self-login, automated anniversary billing, maintenance logging, and Lipa Na M-Pesa STK push integration.",
+  "name": "kireu houses",
+  "description": "Find premium spaces and modern living options with kireu houses. A high-quality full-stack real estate and multi-property management dashboard with live tenant and staff auth channels.",
   "requestFramePermissions": ["camera"],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

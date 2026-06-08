@@ -1,0 +1,20 @@
+{
+  "short_name": "kireu houses",
+  "name": "kireu houses | Quality Real Estate & Property Solutions",
+  "icons": [
+    {
+      "src": "/src/assets/images/kireu_logo_1780960611389.png",
+      "sizes": "64x64 32x32 24x24 16x16",
+      "type": "image/png"
+    },
+    {
+      "src": "/src/assets/images/kireu_logo_1780960611389.png",
+      "type": "image/png",
+      "sizes": "192x192"
+    }
+  ],
+  "start_url": ".",
+  "display": "standalone",
+  "theme_color": "#111827",
+  "background_color": "#ffffff"
+}
