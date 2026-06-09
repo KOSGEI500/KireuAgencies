@@ -3,6 +3,7 @@ import path from "path";
 import fs from "fs";
 import { createServer as createViteServer } from "vite";
 import dotenv from "dotenv";
+import { Firestore } from "@google-cloud/firestore";
 import { Property, Room, Tenant, Payment, MaintenanceTicket, Caretaker, SMSLog, RoomRequest } from "./src/types";
 
 dotenv.config();
@@ -12,6 +13,35 @@ const PORT = 3000;
 
 // Path to durable container storage for JSON-based relational model
 const DB_FILE = path.join(process.cwd(), "server-db.json");
+
+// Dynamic Firestore setup
+const configPath = path.join(process.cwd(), "firebase-applet-config.json");
+let firestore: any = null;
+
+function getAppConfig() {
+  if (fs.existsSync(configPath)) {
+    try {
+      return JSON.parse(fs.readFileSync(configPath, "utf-8"));
+    } catch (e) {
+      console.error("Error reading firebase-applet-config.json:", e);
+    }
+  }
+  return {};
+}
+
+const initialConfig = getAppConfig();
+if (initialConfig.projectId && initialConfig.firestoreDatabaseId) {
+  try {
+    firestore = new Firestore({
+      projectId: initialConfig.projectId,
+      databaseId: initialConfig.firestoreDatabaseId,
+      ignoreUndefinedProperties: true
+    });
+    console.log(`Firestore connected dynamically for server-side persistence: Database: ${initialConfig.firestoreDatabaseId}`);
+  } catch (err) {
+    console.error("Failed to initialize Google Firestore server-side:", err);
+  }
+}
 
 // Structure of our Parent-Child relational model
 interface DBModel {
@@ -141,37 +171,128 @@ const INITIAL_DB: DBModel = {
   ]
 };
 
-// Database helper functions to read/write JSON file
+// Local in-memory cache of the database to guarantee synchronous readDB() performance
+let cachedDb: DBModel | null = null;
+
+// Cleanse undefined properties recursively to secure Firestore document writes
+function cleanseUndefined(obj: any): any {
+  if (obj === undefined) return null;
+  if (obj === null) return null;
+  if (Array.isArray(obj)) {
+    return obj.map(item => cleanseUndefined(item));
+  }
+  if (typeof obj === "object") {
+    if (obj instanceof Date) return obj.toISOString();
+    const cleaned: any = {};
+    for (const key of Object.keys(obj)) {
+      const val = obj[key];
+      if (val !== undefined) {
+        cleaned[key] = cleanseUndefined(val);
+      }
+    }
+    return cleaned;
+  }
+  return obj;
+}
+
+async function syncFromFirestore(): Promise<DBModel> {
+  if (!firestore) {
+    console.warn("Firestore not initialized, falling back to local memory database.");
+    return readDB();
+  }
+  try {
+    const docRef = firestore.collection("app_state").doc("main");
+    const docSnap = await docRef.get();
+    if (docSnap.exists) {
+      console.log("Loading persistent estate database from Google Cloud Firestore...");
+      const data = docSnap.data() as DBModel;
+      
+      // Merge with default structures to safeguard against missing arrays on old schema runs
+      if (!data.properties) data.properties = [];
+      if (!data.rooms) data.rooms = [];
+      if (!data.tenants) data.tenants = [];
+      if (!data.payments) data.payments = [];
+      if (!data.maintenance) data.maintenance = [];
+      if (!data.caretakers) data.caretakers = [];
+      if (!data.sms_logs) data.sms_logs = [];
+      if (!data.room_requests) data.room_requests = [];
+      
+      cachedDb = data;
+      // Mirror the persistent state onto local container disk for performance backup
+      try {
+        fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2));
+      } catch (e) {}
+      
+      return data;
+    } else {
+      console.log("No existing database document found in Cloud Firestore. Seeding INITIAL_DB...");
+      const seeded = cleanseUndefined(INITIAL_DB);
+      await docRef.set(seeded);
+      cachedDb = JSON.parse(JSON.stringify(INITIAL_DB));
+      return cachedDb!;
+    }
+  } catch (error: any) {
+    if (error && error.message && error.message.includes("PERMISSION_DENIED")) {
+      console.warn("Durable state restoration bypassed: Server container credentials do not have direct client-node read permissions on custom Firestore keys.");
+    } else {
+      console.error("Failed to fetch database document from Firestore, using disk cache...", error);
+    }
+    return readDB();
+  }
+}
+
+async function syncToFirestore(data: DBModel) {
+  if (!firestore) return;
+  try {
+    const docRef = firestore.collection("app_state").doc("main");
+    const cleanedData = cleanseUndefined(data);
+    await docRef.set(cleanedData);
+    console.log("Durable state backup written to Cloud Firestore successfully.");
+  } catch (error: any) {
+    if (error && error.message && error.message.includes("PERMISSION_DENIED")) {
+      console.warn("Durable backup sync bypassed: Server container credentials do not have direct client-node write permissions on custom Firestore keys.");
+    } else {
+      console.error("Failed to commit database backup to Firestore:", error);
+    }
+  }
+}
+
+// Database helper functions to read/write cached/persistent storage
 function readDB(): DBModel {
+  if (cachedDb) {
+    return cachedDb;
+  }
   try {
     if (!fs.existsSync(DB_FILE)) {
       fs.writeFileSync(DB_FILE, JSON.stringify(INITIAL_DB, null, 2));
+      cachedDb = JSON.parse(JSON.stringify(INITIAL_DB));
       return INITIAL_DB;
     }
     const raw = fs.readFileSync(DB_FILE, "utf-8");
     const parsed = JSON.parse(raw) as DBModel;
-    if (!parsed.caretakers) {
-      parsed.caretakers = [];
-    }
-    if (!parsed.sms_logs) {
-      parsed.sms_logs = [];
-    }
-    if (!parsed.room_requests) {
-      parsed.room_requests = [];
-    }
+    if (!parsed.caretakers) parsed.caretakers = [];
+    if (!parsed.sms_logs) parsed.sms_logs = [];
+    if (!parsed.room_requests) parsed.room_requests = [];
+    cachedDb = parsed;
     return parsed;
   } catch (error) {
-    console.error("DB reading error, fallback to memory", error);
-    return { ...INITIAL_DB, caretakers: [], sms_logs: [], room_requests: [] };
+    console.error("Disk DB reading error, falling back to initial memory definition", error);
+    cachedDb = { ...INITIAL_DB, caretakers: [], sms_logs: [], room_requests: [] };
+    return cachedDb;
   }
 }
 
 function writeDB(data: DBModel) {
+  cachedDb = data;
   try {
     fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2));
   } catch (error) {
-    console.error("DB writing error", error);
+    console.error("Local disk storage writing error", error);
   }
+  // Synchronize asynchronously with Google Cloud Firestore
+  syncToFirestore(data).catch((err) => {
+    console.error("Asynchronous FireStore background synchronization failed:", err);
+  });
 }
 
 // BILLING ENGINE: Computes current billing cycle dynamically
@@ -552,6 +673,30 @@ app.delete("/api/tenants/:tenant_id", (req, res) => {
   res.json({ message: "Tenant successfully checked out. Room is now Vacant." });
 });
 
+app.put("/api/properties/:property_id/rooms/:room_number", (req, res) => {
+  const db = readDB();
+  const { property_id, room_number } = req.params;
+  const { monthly_rent, utility_rate, status } = req.body;
+
+  const room = db.rooms.find((r) => r.property_id === property_id && r.room_number === room_number);
+  if (!room) {
+    return res.status(404).json({ error: "Room not found." });
+  }
+
+  if (monthly_rent !== undefined) {
+    room.monthly_rent = Number(monthly_rent);
+  }
+  if (utility_rate !== undefined) {
+    room.utility_rate = Number(utility_rate);
+  }
+  if (status !== undefined) {
+    room.status = status;
+  }
+
+  writeDB(db);
+  res.json(room);
+});
+
 app.delete("/api/properties/:property_id/rooms/:room_number", (req, res) => {
   const db = readDB();
   const { property_id, room_number } = req.params;
@@ -867,10 +1012,11 @@ app.post("/api/payments/stkpush", async (req, res) => {
     return res.status(404).json({ error: "Tenant not found." });
   }
 
-  const mpesaKey = process.env.MPESA_CONSUMER_KEY;
-  const mpesaSecret = process.env.MPESA_CONSUMER_SECRET;
-  const shortcode = process.env.MPESA_SHORTCODE || "174379";
-  const passkey = process.env.MPESA_PASSKEY || "bfb279f9aa9bdbcf158e97dd71a467cd2e0c893059b10f78e6b72dec1a0111e2";
+  const devConfig = getAppConfig();
+  const mpesaKey = devConfig.mpesaConsumerKey || process.env.MPESA_CONSUMER_KEY;
+  const mpesaSecret = devConfig.mpesaConsumerSecret || process.env.MPESA_CONSUMER_SECRET;
+  const shortcode = devConfig.mpesaShortcode || process.env.MPESA_SHORTCODE || "174379";
+  const passkey = devConfig.mpesaPasskey || process.env.MPESA_PASSKEY || "bfb279f9aa9bdbcf158e97dd71a467cd2e0c893059b10f78e6b72dec1a0111e2";
 
   // Check if Safaricom credentials are empty or default developer keys
   const isSimulationMode =
@@ -1168,8 +1314,9 @@ app.post("/api/sms/remind", async (req, res) => {
     return res.json({ success: true, sentCount: 0, results: [], message: "No tenants found possessing outstanding balances." });
   }
 
-  const atApiKey = process.env.AT_API_KEY;
-  const atUsername = process.env.AT_USERNAME || "sandbox";
+  const devConfig = getAppConfig();
+  const atApiKey = devConfig.atApiKey || process.env.AT_API_KEY;
+  const atUsername = devConfig.atUsername || process.env.AT_USERNAME || "sandbox";
   const isSimulation = !atApiKey || atApiKey.includes("provide") || atApiKey.length < 5;
 
   const results: any[] = [];
@@ -1356,6 +1503,74 @@ app.delete("/api/room-requests/:id", (req, res) => {
 });
 
 
+// 11. DEVELOPER OPTIONS CONFIG ENDPOINTS
+app.get("/api/developer/firebase-config", (req, res) => {
+  const { email } = req.query;
+  if (!email || typeof email !== "string" || email.toLowerCase().trim() !== "collinskosgei32@gmail.com") {
+    return res.status(403).json({ error: "Access Denied: Only collinskosgei32@gmail.com can access configuration." });
+  }
+  const configPath = path.join(process.cwd(), "firebase-applet-config.json");
+  if (fs.existsSync(configPath)) {
+    try {
+      const config = JSON.parse(fs.readFileSync(configPath, "utf-8"));
+      return res.json(config);
+    } catch (e) {
+      return res.status(500).json({ error: "Failed to read configuration file." });
+    }
+  }
+  return res.status(404).json({ error: "Configuration file not found." });
+});
+
+app.post("/api/developer/firebase-config", async (req, res) => {
+  const { email, config } = req.body;
+  if (!email || typeof email !== "string" || email.toLowerCase().trim() !== "collinskosgei32@gmail.com") {
+    return res.status(403).json({ error: "Access Denied: Only collinskosgei32@gmail.com is authorized." });
+  }
+
+  const configPath = path.join(process.cwd(), "firebase-applet-config.json");
+  if (config && typeof config === "object") {
+    try {
+      // Merge with or write config
+      let existing = {};
+      if (fs.existsSync(configPath)) {
+        try {
+          existing = JSON.parse(fs.readFileSync(configPath, "utf-8"));
+        } catch (e) {}
+      }
+
+      const merged = { ...existing, ...config };
+      fs.writeFileSync(configPath, JSON.stringify(merged, null, 2));
+      
+      // Re-initialize Firestore client if credentials existed
+      if (merged.projectId && merged.firestoreDatabaseId) {
+        try {
+          firestore = new Firestore({
+            projectId: merged.projectId,
+            databaseId: merged.firestoreDatabaseId,
+            ignoreUndefinedProperties: true
+          });
+          console.log(`Firestore reconnected dynamically: ${merged.firestoreDatabaseId}`);
+          
+          // Clear memory cache and force fresh synchronization
+          cachedDb = null;
+          await syncFromFirestore();
+        } catch (err: any) {
+          console.error("Firestore client re-initialization failed:", err);
+          return res.status(500).json({ error: "Configuration written to disk, but connection to dynamic Firestore failed: " + err.message });
+        }
+      }
+      
+      return res.json({ success: true, message: "Developer configuration keys updated successfully on server." });
+    } catch (writeErr: any) {
+      console.error("Failed to write config file:", writeErr);
+      return res.status(500).json({ error: "Failed to write configuration file on server." });
+    }
+  } else {
+    return res.status(400).json({ error: "Invalid configuration specifications." });
+  }
+});
+
+
 // Utility formats
 function getMpesaTimestamp(): string {
   const now = new Date();
@@ -1367,6 +1582,9 @@ function getMpesaTimestamp(): string {
 // VITE DEV SERVER OR STATIC SERVER SETUP
 // ---------------------------------------------------------------------------
 async function startServer() {
+  // Synchronize database with Firestore on boot
+  await syncFromFirestore();
+
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
       server: { middlewareMode: true },

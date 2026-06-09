@@ -52,12 +52,14 @@ export default function App() {
   }, []);
 
   const fetchProperties = async (retryCount = 0) => {
+    let succeeded = false;
     try {
       setFetchError(false);
       const response = await fetch("/api/properties");
       if (response.ok) {
         const list = await response.json();
         setProperties(list);
+        succeeded = true;
       } else {
         throw new Error(`Server returned status ${response.status}`);
       }
@@ -71,7 +73,7 @@ export default function App() {
         setFetchError(true);
       }
     } finally {
-      if (retryCount === 3 || !fetchError) {
+      if (succeeded || retryCount === 3) {
         setReady(true);
       }
     }
@@ -369,8 +371,30 @@ export default function App() {
               );
             }
             return (
-              <div className="p-8 text-center text-xs font-mono text-slate-400">
-                Synchronizing Property Session...
+              <div className="min-h-screen bg-slate-950 flex flex-col justify-center items-center text-center p-6 text-slate-350">
+                <div className="max-w-md w-full p-6 bg-slate-900/60 border border-white/10 rounded-3xl shadow-2xl space-y-4 backdrop-blur-md">
+                  <div className="w-12 h-12 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 flex items-center justify-center mx-auto animate-pulse">
+                    <Building2 className="w-6 h-6 animate-bounce" />
+                  </div>
+                  <h3 className="text-sm font-bold text-white font-mono uppercase tracking-widest text-emerald-400">Synchronizing Property Session...</h3>
+                  <p className="text-xs text-slate-400 leading-relaxed font-sans">
+                    We are verifying your estate profile link. If this process does not complete, the server might be unreachable or you might have a stale session.
+                  </p>
+                  <div className="pt-2 flex flex-col sm:flex-row gap-3 justify-center">
+                    <button
+                      onClick={() => fetchProperties(0)}
+                      className="px-4 py-2 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 text-slate-950 font-bold text-xs rounded-xl shadow-md cursor-pointer transition-all uppercase tracking-wider"
+                    >
+                      🔄 Retry Sync
+                    </button>
+                    <button
+                      onClick={handleLogout}
+                      className="px-4 py-2 bg-white/5 hover:bg-white/10 text-slate-200 font-bold text-xs rounded-xl border border-white/10 cursor-pointer transition-all uppercase tracking-wider"
+                    >
+                      🚪 Disconnect Session
+                    </button>
+                  </div>
+                </div>
               </div>
             );
           })()

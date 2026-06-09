@@ -3,7 +3,7 @@ import { Property, Room, Tenant, Payment, MaintenanceTicket, AdminSession, RoomR
 import { 
   Building2, Users, Receipt, Wrench, Shield, LogOut, CheckCircle, Plus, 
   Trash2, PlusCircle, Smartphone, Sparkles, Filter, Landmark, MapPin, Eye, AlertCircle, Clock,
-  Menu, X, User, MessageSquare, ListCollapse, Building, ExternalLink, Settings
+  Menu, X, User, MessageSquare, ListCollapse, Building, ExternalLink, Settings, Key, Edit3
 } from "lucide-react";
 
 interface AdminPortalProps {
@@ -59,11 +59,17 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
   const [selectedPropertyId, setSelectedPropertyId] = useState<string>("");
   const [rooms, setRooms] = useState<Room[]>([]);
   const [tenants, setTenants] = useState<any[]>([]);
+
+  // Room editing states
+  const [editingRoom, setEditingRoom] = useState<Room | null>(null);
+  const [editRoomRent, setEditRoomRent] = useState<string>("");
+  const [editRoomUtil, setEditRoomUtil] = useState<string>("");
+  const [editRoomStatus, setEditRoomStatus] = useState<string>("");
   const [payments, setPayments] = useState<Payment[]>([]);
   const [maintenance, setMaintenance] = useState<MaintenanceTicket[]>([]);
 
   // Tab State with "clock" view support
-  const [activeTab, setActiveTab] = useState<"dashboard" | "rooms" | "tenants" | "payments" | "maintenance" | "properties" | "clock" | "caretakers" | "sms" | "requests">("dashboard");
+  const [activeTab, setActiveTab] = useState<"dashboard" | "rooms" | "tenants" | "payments" | "maintenance" | "properties" | "clock" | "caretakers" | "sms" | "requests" | "developer_google" | "developer_mpesa" | "developer_at">("dashboard");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   // States and Handlers for Vacant Room Requests
@@ -110,7 +116,7 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
     }
   };
 
-  const handleTabClick = (tab: "dashboard" | "rooms" | "tenants" | "payments" | "maintenance" | "properties" | "clock" | "caretakers" | "sms" | "requests") => {
+  const handleTabClick = (tab: "dashboard" | "rooms" | "tenants" | "payments" | "maintenance" | "properties" | "clock" | "caretakers" | "sms" | "requests" | "developer_google" | "developer_mpesa" | "developer_at") => {
     setActiveTab(tab);
     setMobileMenuOpen(false);
   };
@@ -138,6 +144,106 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
   } | null>(null);
   const [termsAccepted, setTermsAccepted] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+
+  // Developer / Google Firebase / M-Pesa / Africa's Talking configurations
+  const [devConfig, setDevConfig] = useState({
+    projectId: "",
+    appId: "",
+    apiKey: "",
+    authDomain: "",
+    firestoreDatabaseId: "",
+    storageBucket: "",
+    messagingSenderId: "",
+    measurementId: "",
+    mpesaConsumerKey: "",
+    mpesaConsumerSecret: "",
+    mpesaShortcode: "",
+    mpesaPasskey: "",
+    atApiKey: "",
+    atUsername: ""
+  });
+  const [devLoading, setDevLoading] = useState(false);
+  const [devStatus, setDevStatus] = useState<{ type: "success" | "error"; message: string } | null>(null);
+
+  useEffect(() => {
+    if (activeTab.startsWith("developer_") && session.email?.toLowerCase().trim() === "collinskosgei32@gmail.com") {
+      setDevLoading(true);
+      setDevStatus(null);
+      fetch(`/api/developer/firebase-config?email=${encodeURIComponent(session.email)}`)
+        .then(res => {
+          if (res.ok) return res.json();
+          throw new Error("Unable to fetch configuration parameters.");
+        })
+        .then(data => {
+          setDevConfig({
+            projectId: data.projectId || "",
+            appId: data.appId || "",
+            apiKey: data.apiKey || "",
+            authDomain: data.authDomain || "",
+            firestoreDatabaseId: data.firestoreDatabaseId || "",
+            storageBucket: data.storageBucket || "",
+            messagingSenderId: data.messagingSenderId || "",
+            measurementId: data.measurementId || "",
+            mpesaConsumerKey: data.mpesaConsumerKey || "",
+            mpesaConsumerSecret: data.mpesaConsumerSecret || "",
+            mpesaShortcode: data.mpesaShortcode || "",
+            mpesaPasskey: data.mpesaPasskey || "",
+            atApiKey: data.atApiKey || "",
+            atUsername: data.atUsername || ""
+          });
+        })
+        .catch(err => {
+          setDevStatus({ type: "error", message: err.message });
+        })
+        .finally(() => {
+          setDevLoading(false);
+        });
+    }
+  }, [activeTab, session.email]);
+
+  const handleUpdateDevConfig = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (session.email?.toLowerCase().trim() !== "collinskosgei32@gmail.com") {
+      alert("Unauthorized: Only collinskosgei32@gmail.com is authorized to manage dynamic integrations.");
+      return;
+    }
+    setDevLoading(true);
+    setDevStatus(null);
+    try {
+      const response = await fetch("/api/developer/firebase-config", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: session.email,
+          config: devConfig
+        })
+      });
+      const resData = await response.json();
+      if (response.ok) {
+        let label = "Developer settings updated successfully!";
+        if (activeTab === "developer_google") {
+          label = "Google Firestore keys updated successfully! Connected to database ID: " + devConfig.firestoreDatabaseId + ".";
+        } else if (activeTab === "developer_mpesa") {
+          label = "Safaricom M-Pesa client keys updated successfully! Shortcode active: " + devConfig.mpesaShortcode + ".";
+        } else if (activeTab === "developer_at") {
+          label = "Africa's Talking SMS credentials updated successfully! Username active: " + devConfig.atUsername + ".";
+        }
+        setDevStatus({ 
+          type: "success", 
+          message: label
+        });
+        const timeStr = new Date().toLocaleTimeString();
+        setSyncLogs(prev => [`[${timeStr}] ${label}`, ...prev]);
+        onRefreshProperties();
+      } else {
+        setDevStatus({ type: "error", message: resData.error || "Update operation failed on server." });
+      }
+    } catch (err) {
+      setDevStatus({ type: "error", message: "Failed to connect to the backend server." });
+    } finally {
+      setDevLoading(false);
+    }
+  };
 
   // Form states
   const [newPropName, setNewPropName] = useState("");
@@ -327,8 +433,12 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
       // Append log entry cleanly
       const logStr = `[${new Date().toLocaleTimeString()}] Auto-Sync: Verified ${loadedRooms.length} rooms, ${loadedTenants.length} tenants, ${loadedPayments.length} payments, ${loadedTickets.length} tickets, and ${smsCount} communication remnants.`;
       setSyncLogs(prev => [logStr, ...prev.slice(0, 49)]);
-    } catch (error) {
-      console.error("Error fetching admin telemetry metrics:", error);
+    } catch (error: any) {
+      if (error instanceof Error && error.message.includes("Failed to fetch")) {
+        console.warn("Telemetry background tick: Server is currently reconnecting or offline.");
+      } else {
+        console.warn("Error fetching admin telemetry metrics gracefully:", error);
+      }
     }
   };
 
@@ -474,6 +584,39 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
       alert("Apartment unit registered as Vacant.");
     } catch (err: any) {
       setRoomError(err.message || "Error creating unit.");
+    }
+  };
+
+  // Update Room Details (Global or caretaker)
+  const handleUpdateRoom = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingRoom || editRoomRent === "" || editRoomUtil === "") {
+      alert("Please specify complete room pricing details.");
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/properties/${editingRoom.property_id}/rooms/${editingRoom.room_number}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          monthly_rent: Number(editRoomRent),
+          utility_rate: Number(editRoomUtil),
+          status: editRoomStatus
+        })
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to update room details.");
+      }
+
+      setEditingRoom(null);
+      fetchPropertySpecifics();
+      onRefreshProperties();
+      alert(`Room ${editingRoom.room_number} details successfully updated!`);
+    } catch (err: any) {
+      alert(err.message || "Error updating room details.");
     }
   };
 
@@ -987,6 +1130,45 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
             <span>Clock Sync Auditor</span>
           </button>
 
+          {session.email?.toLowerCase().trim() === "collinskosgei32@gmail.com" && (
+            <div className="space-y-1.5 pt-2 border-t border-slate-800/80">
+              <div className="px-3 text-[10px] uppercase tracking-wider text-slate-500 font-bold flex items-center gap-1.5 pb-1">
+                <Key className="w-3.5 h-3.5 text-emerald-400" />
+                <span>ROOT DEVELOPER</span>
+              </div>
+              
+              <button
+                onClick={() => handleTabClick("developer_google")}
+                className={`w-full flex items-center gap-2 px-3 py-1.5 text-[11px] font-semibold rounded-lg transition-all text-left pl-5 ${
+                  activeTab === "developer_google" ? "sidebar-active text-white bg-emerald-600 shadow-xs" : "text-emerald-400 hover:text-white hover:bg-slate-800"
+                }`}
+              >
+                <div className={`w-1.5 h-1.5 rounded-full ${activeTab === "developer_google" ? "bg-white" : "bg-emerald-400"}`} />
+                <span>Google Firestore</span>
+              </button>
+
+              <button
+                onClick={() => handleTabClick("developer_mpesa")}
+                className={`w-full flex items-center gap-2 px-3 py-1.5 text-[11px] font-semibold rounded-lg transition-all text-left pl-5 ${
+                  activeTab === "developer_mpesa" ? "sidebar-active text-white bg-emerald-600 shadow-xs" : "text-emerald-400 hover:text-white hover:bg-slate-800"
+                }`}
+              >
+                <div className={`w-1.5 h-1.5 rounded-full ${activeTab === "developer_mpesa" ? "bg-white" : "bg-emerald-400"}`} />
+                <span>M-Pesa API</span>
+              </button>
+
+              <button
+                onClick={() => handleTabClick("developer_at")}
+                className={`w-full flex items-center gap-2 px-3 py-1.5 text-[11px] font-semibold rounded-lg transition-all text-left pl-5 ${
+                  activeTab === "developer_at" ? "sidebar-active text-white bg-emerald-600 shadow-xs" : "text-emerald-400 hover:text-white hover:bg-slate-800"
+                }`}
+              >
+                <div className={`w-1.5 h-1.5 rounded-full ${activeTab === "developer_at" ? "bg-white" : "bg-emerald-400"}`} />
+                <span>Africa's Talking</span>
+              </button>
+            </div>
+          )}
+
           <button
             onClick={() => {
               setMobileMenuOpen(false);
@@ -1297,86 +1479,166 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
 
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
             
-            {/* ADD ROOM PANEL */}
+            {/* ROOM PANEL (ADD OR EDIT) */}
             <div className="lg:col-span-4 bg-white p-5 shadow-xs text-left h-fit high-contrast-card">
-              <h3 className="font-bold text-sm text-slate-900 font-display flex items-center gap-1.5 mb-2">
-                <Plus className="w-5 h-5 text-emerald-500" />
-                <span>Register Unit Room</span>
-              </h3>
-              <p className="text-xs text-slate-500 mb-4">Catalog vacancy dimensions specifically under relational structures:</p>
+              {editingRoom ? (
+                <div>
+                  <h3 className="font-bold text-sm text-slate-900 font-display flex items-center gap-1.5 mb-2">
+                    <Edit3 className="w-5 h-5 text-indigo-500 animate-bounce" />
+                    <span>Edit Unit Room: {editingRoom.room_number}</span>
+                  </h3>
+                  <p className="text-xs text-slate-500 mb-4">Modify pricing specs or vacancy status for this rentable apartment unit:</p>
 
-              {roomError && (
-                <div className="mb-3 p-2.5 bg-red-50 border border-red-200 rounded-xl text-red-700 text-xs flex gap-1">
-                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-                  <span>{roomError}</span>
+                  <form onSubmit={handleUpdateRoom} className="space-y-4">
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Room Number Code (Read Only)</label>
+                      <input
+                        type="text"
+                        value={editingRoom.room_number}
+                        disabled
+                        className="w-full bg-slate-100 border border-slate-200 rounded-xl p-2.5 text-xs font-bold text-slate-500 uppercase tracking-wider cursor-not-allowed"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Monthly Billing Rent (KES)</label>
+                      <input
+                        type="number"
+                        placeholder="e.g. 15000"
+                        value={editRoomRent}
+                        onChange={(e) => setEditRoomRent(e.target.value)}
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500 font-bold"
+                        required
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Security Deposit / Maintenance (KES)</label>
+                      <input
+                        type="number"
+                        placeholder="e.g. 5000"
+                        value={editRoomUtil}
+                        onChange={(e) => setEditRoomUtil(e.target.value)}
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500 font-bold"
+                        required
+                      />
+                      <p className="text-[9px] text-slate-400 mt-1 leading-normal font-sans">
+                        Paid once when securing a room to cover damages. Refunded upon check-out.
+                      </p>
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Placement State</label>
+                      <select
+                        value={editRoomStatus}
+                        onChange={(e) => setEditRoomStatus(e.target.value)}
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500 font-bold text-slate-700"
+                        required
+                      >
+                        <option value="Vacant">Vacant</option>
+                        <option value="Occupied">Occupied</option>
+                      </select>
+                    </div>
+
+                    <div className="flex gap-2.5 pt-2">
+                      <button
+                        type="button"
+                        onClick={() => setEditingRoom(null)}
+                        className="w-1/2 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs uppercase rounded-xl transition-all cursor-pointer text-center"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="submit"
+                        className="w-1/2 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs uppercase rounded-xl transition-all cursor-pointer text-center shadow-md shadow-indigo-600/10"
+                      >
+                        Save Details
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              ) : (
+                <div>
+                  <h3 className="font-bold text-sm text-slate-900 font-display flex items-center gap-1.5 mb-2">
+                    <Plus className="w-5 h-5 text-emerald-500" />
+                    <span>Register Unit Room</span>
+                  </h3>
+                  <p className="text-xs text-slate-500 mb-4">Catalog vacancy dimensions specifically under relational structures:</p>
+
+                  {roomError && (
+                    <div className="mb-3 p-2.5 bg-red-50 border border-red-200 rounded-xl text-red-700 text-xs flex gap-1">
+                      <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                      <span>{roomError}</span>
+                    </div>
+                  )}
+
+                  <form onSubmit={handleAddRoom} className="space-y-4">
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Room Number Code</label>
+                      <input
+                        id="new-room-num"
+                        type="text"
+                        placeholder="e.g. 104, B2"
+                        value={newRoomNum}
+                        onChange={(e) => setNewRoomNum(e.target.value)}
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs focus:outline-none focus:ring-2 focus:ring-slate-800 font-bold uppercase tracking-wider text-slate-800"
+                        required
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Monthly Billing Rent (KES)</label>
+                      <input
+                        id="new-room-rent"
+                        type="number"
+                        placeholder="e.g. 15000"
+                        value={newRoomRent}
+                        onChange={(e) => setNewRoomRent(e.target.value)}
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-slate-800"
+                        required
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Security Deposit / Maintenance Fee (KES)</label>
+                      <input
+                        id="new-room-util"
+                        type="number"
+                        placeholder="e.g. 5000 (Refundable security / maintenance deposit)"
+                        value={newRoomUtil}
+                        onChange={(e) => setNewRoomUtil(e.target.value)}
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-slate-800"
+                        required
+                      />
+                      <p className="text-[9px] text-slate-400 mt-1 leading-normal font-sans">
+                        Paid once when securing a room to cover damages (e.g. toilet fixtures, paint). Fully or partially refunded upon moving out.
+                      </p>
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Target Plot Property Binder</label>
+                      <select
+                        id="new-room-propid"
+                        value={newRoomPropId}
+                        onChange={(e) => setNewRoomPropId(e.target.value)}
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs focus:outline-none focus:ring-2 focus:ring-slate-800"
+                        required
+                      >
+                        {visibleProperties.map(p => (
+                          <option key={p.property_id} value={p.property_id}>🏢 {p.property_name}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <button
+                      type="submit"
+                      className="w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs uppercase rounded-xl transition-all cursor-pointer"
+                    >
+                      Create New Room
+                    </button>
+                  </form>
                 </div>
               )}
-
-              <form onSubmit={handleAddRoom} className="space-y-4">
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Room Number Code</label>
-                  <input
-                    id="new-room-num"
-                    type="text"
-                    placeholder="e.g. 104, B2"
-                    value={newRoomNum}
-                    onChange={(e) => setNewRoomNum(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs focus:outline-none focus:ring-2 focus:ring-slate-800 font-bold uppercase tracking-wider text-slate-800"
-                    required
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Monthly Billing Rent (KES)</label>
-                  <input
-                    id="new-room-rent"
-                    type="number"
-                    placeholder="e.g. 15000"
-                    value={newRoomRent}
-                    onChange={(e) => setNewRoomRent(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-slate-800"
-                    required
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Security Deposit / Maintenance Fee (KES)</label>
-                  <input
-                    id="new-room-util"
-                    type="number"
-                    placeholder="e.g. 5000 (Refundable security / maintenance deposit)"
-                    value={newRoomUtil}
-                    onChange={(e) => setNewRoomUtil(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-slate-800"
-                    required
-                  />
-                  <p className="text-[9px] text-slate-400 mt-1 leading-normal font-sans">
-                    Paid once when securing a room to cover damages (e.g. toilet fixtures, paint). Fully or partially refunded upon moving out.
-                  </p>
-                </div>
-
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Target Plot Property Binder</label>
-                  <select
-                    id="new-room-propid"
-                    value={newRoomPropId}
-                    onChange={(e) => setNewRoomPropId(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs focus:outline-none focus:ring-2 focus:ring-slate-800"
-                    required
-                  >
-                    {visibleProperties.map(p => (
-                      <option key={p.property_id} value={p.property_id}>🏢 {p.property_name}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <button
-                  type="submit"
-                  className="w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs uppercase rounded-xl transition-all cursor-pointer"
-                >
-                  Create New Room
-                </button>
-              </form>
             </div>
 
             {/* ROOM LIST TABLE */}
@@ -1423,13 +1685,28 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
                             </span>
                           </td>
                           <td className="p-3 text-right">
-                            <button
-                              onClick={() => triggerDeleteFlow('room', r.room_number, `Room ${r.room_number}`, r.property_id)}
-                              className="p-1 px-2 text-rose-600 hover:bg-rose-50 rounded-lg transition-all cursor-pointer"
-                              title="Delete unit space permanently"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
+                            <div className="flex items-center justify-end gap-1.5">
+                              <button
+                                onClick={() => {
+                                  setEditingRoom(r);
+                                  setEditRoomRent(String(r.monthly_rent));
+                                  setEditRoomUtil(String(r.utility_rate));
+                                  setEditRoomStatus(r.status);
+                                }}
+                                className="p-1 px-2.5 text-indigo-600 hover:bg-indigo-50 border border-indigo-200 hover:border-indigo-300 rounded-lg transition-all cursor-pointer flex items-center gap-1 font-bold text-[11px]"
+                                title="Edit unit space prices and settings"
+                              >
+                                <Edit3 className="w-3 h-3 text-indigo-500" />
+                                <span>Edit</span>
+                              </button>
+                              <button
+                                onClick={() => triggerDeleteFlow('room', r.room_number, `Room ${r.room_number}`, r.property_id)}
+                                className="p-1 px-2 text-rose-600 hover:bg-rose-50 rounded-lg transition-all cursor-pointer"
+                                title="Delete unit space permanently"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       ))}
@@ -2823,6 +3100,398 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
                   <span>Your active session is fully licensed and compliant with standard Safaricom Developer Terms of Service in Kenya.</span>
                 </div>
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* 9. DEVELOPER GOOGLE FIRESTORE KEYS TAB */}
+        {activeTab === "developer_google" && session.email?.toLowerCase().trim() === "collinskosgei32@gmail.com" && (
+          <div className="space-y-6 text-left animate-in fade-in duration-200">
+            <div className="bg-slate-900 rounded-3xl p-6 sm:p-8 text-white relative overflow-hidden border border-slate-800 shadow-xl">
+              <div className="absolute top-0 right-0 w-96 h-96 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none"></div>
+              
+              <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6 relative z-10">
+                <div className="space-y-2">
+                  <div className="inline-flex items-center gap-2 px-3 py-1 bg-amber-500/15 rounded-full border border-amber-500/20 text-amber-400 font-mono text-[10px] font-bold uppercase tracking-wider">
+                    <span className="w-1.5 h-1.5 bg-amber-400 rounded-full animate-ping"></span>
+                    Root Google Permissions Authorized
+                  </div>
+                  <h2 className="text-2xl font-extrabold font-display tracking-tight text-white flex items-center gap-2">
+                    <Key className="w-6 h-6 text-emerald-400 shrink-0" />
+                    <span>Google Firestore Keys</span>
+                  </h2>
+                  <p className="text-slate-400 text-xs max-w-xl leading-relaxed">
+                    Update your application's Google Cloud Firestore database credentials dynamically. These configuration updates persist on the container filesystem and dynamically reconnect Firestore without system restarts.
+                  </p>
+                </div>
+                
+                <div className="p-4 bg-slate-800/80 backdrop-blur-xs rounded-2xl border border-slate-700/50 text-center min-w-[200px]">
+                  <span className="text-[10px] uppercase font-bold text-slate-400 tracking-widest block mb-1">Developer Email</span>
+                  <div className="font-mono text-xs font-bold text-emerald-400 truncate max-w-[180px]" title={session.email}>
+                    {session.email}
+                  </div>
+                  <span className="text-[9px] text-slate-500 font-mono block mt-1.5">Authorized Node Admin</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-xs high-contrast-card">
+              <div className="mb-6">
+                <h3 className="font-bold text-sm text-slate-900 font-display flex items-center gap-2">
+                  <Key className="w-4 h-4 text-emerald-500" />
+                  <span>Dynamic Google Keys Register</span>
+                </h3>
+                <p className="text-xs text-slate-500 font-sans mt-0.5">
+                  Update the underlying Firebase config. Overwritten keys will be written to `/firebase-applet-config.json` and loaded live.
+                </p>
+              </div>
+
+              {devStatus && (
+                <div className={`p-4 rounded-xl mb-6 text-xs flex items-start gap-2.5 ${
+                  devStatus.type === "success" 
+                    ? "bg-emerald-50 border border-emerald-150 text-emerald-800" 
+                    : "bg-rose-50 border border-rose-150 text-rose-800"
+                }`}>
+                  <AlertCircle className={`w-4 h-4 shrink-0 mt-0.5 ${devStatus.type === "success" ? "text-emerald-500" : "text-rose-500"}`} />
+                  <div>
+                    <span className="font-bold uppercase block mb-0.5">
+                      {devStatus.type === "success" ? "Success Notification" : "Error Occurred"}
+                    </span>
+                    {devStatus.message}
+                  </div>
+                </div>
+              )}
+
+              <form onSubmit={handleUpdateDevConfig} className="space-y-5 font-sans">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-bold text-slate-700 uppercase">Google Project ID</label>
+                    <input
+                      type="text"
+                      required
+                      value={devConfig.projectId}
+                      onChange={(e) => setDevConfig({ ...devConfig, projectId: e.target.value })}
+                      className="w-full bg-slate-50 border border-slate-200 focus:bg-white focus:ring-1 focus:ring-emerald-400 text-slate-800 text-xs rounded-lg py-2 px-3 focus:outline-none"
+                      placeholder="e.g. producer-collo"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-bold text-slate-700 uppercase">Firestore Database ID</label>
+                    <input
+                      type="text"
+                      required
+                      value={devConfig.firestoreDatabaseId}
+                      onChange={(e) => setDevConfig({ ...devConfig, firestoreDatabaseId: e.target.value })}
+                      className="w-full bg-slate-50 border border-slate-200 focus:bg-white focus:ring-1 focus:ring-emerald-400 text-slate-800 text-xs rounded-lg py-2 px-3 focus:outline-none"
+                      placeholder="e.g. (default) or custom-id"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-bold text-slate-700 uppercase">API Key (apiKey)</label>
+                    <input
+                      type="text"
+                      required
+                      value={devConfig.apiKey}
+                      onChange={(e) => setDevConfig({ ...devConfig, apiKey: e.target.value })}
+                      className="w-full bg-slate-50 border border-slate-200 focus:bg-white focus:ring-1 focus:ring-emerald-400 text-slate-800 text-xs rounded-lg py-2 px-3 focus:outline-none"
+                      placeholder="AIzaSy..."
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-bold text-slate-700 uppercase">App ID (appId)</label>
+                    <input
+                      type="text"
+                      required
+                      value={devConfig.appId}
+                      onChange={(e) => setDevConfig({ ...devConfig, appId: e.target.value })}
+                      className="w-full bg-slate-50 border border-slate-200 focus:bg-white focus:ring-1 focus:ring-emerald-400 text-slate-800 text-xs rounded-lg py-2 px-3 focus:outline-none"
+                      placeholder="1:659876571992:web:..."
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-bold text-slate-700 uppercase">Auth Domain</label>
+                    <input
+                      type="text"
+                      required
+                      value={devConfig.authDomain}
+                      onChange={(e) => setDevConfig({ ...devConfig, authDomain: e.target.value })}
+                      className="w-full bg-slate-50 border border-slate-200 focus:bg-white focus:ring-1 focus:ring-emerald-400 text-slate-800 text-xs rounded-lg py-2 px-3 focus:outline-none"
+                      placeholder="project.firebaseapp.com"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-bold text-slate-700 uppercase">Storage Bucket</label>
+                    <input
+                      type="text"
+                      required
+                      value={devConfig.storageBucket}
+                      onChange={(e) => setDevConfig({ ...devConfig, storageBucket: e.target.value })}
+                      className="w-full bg-slate-50 border border-slate-200 focus:bg-white focus:ring-1 focus:ring-emerald-400 text-slate-800 text-xs rounded-lg py-2 px-3 focus:outline-none"
+                      placeholder="project.firebasestorage.app"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-bold text-slate-700 uppercase">Messaging Sender ID</label>
+                    <input
+                      type="text"
+                      required
+                      value={devConfig.messagingSenderId}
+                      onChange={(e) => setDevConfig({ ...devConfig, messagingSenderId: e.target.value })}
+                      className="w-full bg-slate-50 border border-slate-200 focus:bg-white focus:ring-1 focus:ring-emerald-400 text-slate-800 text-xs rounded-lg py-2 px-3 focus:outline-none"
+                      placeholder="e.g. 659876571992"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-bold text-slate-700 uppercase">Measurement ID (Optional)</label>
+                    <input
+                      type="text"
+                      value={devConfig.measurementId}
+                      onChange={(e) => setDevConfig({ ...devConfig, measurementId: e.target.value })}
+                      className="w-full bg-slate-50 border border-slate-200 focus:bg-white focus:ring-1 focus:ring-emerald-400 text-slate-800 text-xs rounded-lg py-2 px-3 focus:outline-none"
+                      placeholder="G-XXXXXX"
+                    />
+                  </div>
+                </div>
+
+                <div className="pt-4 border-t border-slate-100 flex flex-col sm:flex-row gap-3 justify-end">
+                  <button
+                    type="submit"
+                    disabled={devLoading}
+                    className="px-6 py-2.5 bg-emerald-500 hover:bg-emerald-600 disabled:bg-slate-300 text-slate-950 font-bold text-xs uppercase rounded-xl transition-all shadow-md flex items-center justify-center gap-1.5 cursor-pointer disabled:cursor-not-allowed"
+                  >
+                    <span>{devLoading ? "Synchronizing keys..." : "Update & Sync Firestore Keys 🔄"}</span>
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* 10. DEVELOPER MPESA KEYS TAB */}
+        {activeTab === "developer_mpesa" && session.email?.toLowerCase().trim() === "collinskosgei32@gmail.com" && (
+          <div className="space-y-6 text-left animate-in fade-in duration-200">
+            <div className="bg-slate-900 rounded-3xl p-6 sm:p-8 text-white relative overflow-hidden border border-slate-800 shadow-xl">
+              <div className="absolute top-0 right-0 w-96 h-96 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none"></div>
+              
+              <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6 relative z-10">
+                <div className="space-y-2">
+                  <div className="inline-flex items-center gap-2 px-3 py-1 bg-emerald-500/15 rounded-full border border-emerald-500/20 text-emerald-400 font-mono text-[10px] font-bold uppercase tracking-wider">
+                    <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-ping"></span>
+                    M-Pesa API Integration Authorized
+                  </div>
+                  <h2 className="text-2xl font-extrabold font-display tracking-tight text-white flex items-center gap-2">
+                    <Landmark className="w-6 h-6 text-emerald-400 shrink-0" />
+                    <span>Lipa Na M-Pesa Integration</span>
+                  </h2>
+                  <p className="text-slate-400 text-xs max-w-xl leading-relaxed">
+                    Configure your Safaricom M-Pesa Daraja portal API keys. This enables dynamic collection of tenant rent payments into your shortcode with instant client callback confirmations.
+                  </p>
+                </div>
+                
+                <div className="p-4 bg-slate-800/80 backdrop-blur-xs rounded-2xl border border-slate-700/50 text-center min-w-[200px]">
+                  <span className="text-[10px] uppercase font-bold text-slate-400 tracking-widest block mb-1">M-Pesa Gateway</span>
+                  <div className="font-mono text-xs font-bold text-emerald-400 truncate max-w-[180px]">
+                    {devConfig.mpesaShortcode || "174379"}
+                  </div>
+                  <span className="text-[9px] text-slate-500 font-mono block mt-1.5">LNM STK Push Agent</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-xs high-contrast-card">
+              <div className="mb-6">
+                <h3 className="font-bold text-sm text-slate-900 font-display flex items-center gap-2">
+                  <Key className="w-4 h-4 text-emerald-500" />
+                  <span>M-Pesa Keys Register</span>
+                </h3>
+                <p className="text-xs text-slate-500 font-sans mt-0.5">
+                  Update Safaricom Daraja credentials. Overwritten parameters will be saved dynamically to `/firebase-applet-config.json` and loaded live.
+                </p>
+              </div>
+
+              {devStatus && (
+                <div className={`p-4 rounded-xl mb-6 text-xs flex items-start gap-2.5 ${
+                  devStatus.type === "success" 
+                    ? "bg-emerald-50 border border-emerald-150 text-emerald-800" 
+                    : "bg-rose-50 border border-rose-150 text-rose-800"
+                }`}>
+                  <AlertCircle className={`w-4 h-4 shrink-0 mt-0.5 ${devStatus.type === "success" ? "text-emerald-500" : "text-rose-500"}`} />
+                  <div>
+                    <span className="font-bold uppercase block mb-0.5">
+                      {devStatus.type === "success" ? "Success Notification" : "Error Occurred"}
+                    </span>
+                    {devStatus.message}
+                  </div>
+                </div>
+              )}
+
+              <form onSubmit={handleUpdateDevConfig} className="space-y-5 font-sans">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-bold text-slate-700 uppercase">M-Pesa Customer Key</label>
+                    <input
+                      type="text"
+                      required
+                      value={devConfig.mpesaConsumerKey}
+                      onChange={(e) => setDevConfig({ ...devConfig, mpesaConsumerKey: e.target.value })}
+                      className="w-full bg-slate-50 border border-slate-200 focus:bg-white focus:ring-1 focus:ring-emerald-400 text-slate-800 text-xs rounded-lg py-2 px-3 focus:outline-none"
+                      placeholder="e.g. bU8YpB7W..."
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-bold text-slate-700 uppercase">M-Pesa Customer Secret</label>
+                    <input
+                      type="text"
+                      required
+                      value={devConfig.mpesaConsumerSecret}
+                      onChange={(e) => setDevConfig({ ...devConfig, mpesaConsumerSecret: e.target.value })}
+                      className="w-full bg-slate-50 border border-slate-200 focus:bg-white focus:ring-1 focus:ring-emerald-400 text-slate-800 text-xs rounded-lg py-2 px-3 focus:outline-none"
+                      placeholder="e.g. oYt3eE..."
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-bold text-slate-700 uppercase">Business Shortcode</label>
+                    <input
+                      type="text"
+                      required
+                      value={devConfig.mpesaShortcode}
+                      onChange={(e) => setDevConfig({ ...devConfig, mpesaShortcode: e.target.value })}
+                      className="w-full bg-slate-50 border border-slate-200 focus:bg-white focus:ring-1 focus:ring-emerald-400 text-slate-800 text-xs rounded-lg py-2 px-3 focus:outline-none"
+                      placeholder="e.g. 174379 (Sandbox) or Paybill/Till No"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-bold text-slate-700 uppercase">Passkey (Lipa na M-Pesa Online Passkey)</label>
+                    <input
+                      type="text"
+                      required
+                      value={devConfig.mpesaPasskey}
+                      onChange={(e) => setDevConfig({ ...devConfig, mpesaPasskey: e.target.value })}
+                      className="w-full bg-slate-50 border border-slate-200 focus:bg-white focus:ring-1 focus:ring-emerald-400 text-slate-800 text-xs rounded-lg py-2 px-3 focus:outline-none"
+                      placeholder="bfb279f9aa9bdbcf158e97dd71a467cd..."
+                    />
+                  </div>
+                </div>
+
+                <div className="pt-4 border-t border-slate-100 flex flex-col sm:flex-row gap-3 justify-end">
+                  <button
+                    type="submit"
+                    disabled={devLoading}
+                    className="px-6 py-2.5 bg-emerald-500 hover:bg-emerald-600 disabled:bg-slate-300 text-slate-950 font-bold text-xs uppercase rounded-xl transition-all shadow-md flex items-center justify-center gap-1.5 cursor-pointer disabled:cursor-not-allowed"
+                  >
+                    <span>{devLoading ? "Synchronizing keys..." : "Update & Sync M-Pesa Keys 🔄"}</span>
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* 11. DEVELOPER AT KEYS TAB */}
+        {activeTab === "developer_at" && session.email?.toLowerCase().trim() === "collinskosgei32@gmail.com" && (
+          <div className="space-y-6 text-left animate-in fade-in duration-200">
+            <div className="bg-slate-900 rounded-3xl p-6 sm:p-8 text-white relative overflow-hidden border border-slate-800 shadow-xl">
+              <div className="absolute top-0 right-0 w-96 h-96 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none"></div>
+              
+              <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6 relative z-10">
+                <div className="space-y-2">
+                  <div className="inline-flex items-center gap-2 px-3 py-1 bg-sky-500/15 rounded-full border border-sky-500/20 text-sky-400 font-mono text-[10px] font-bold uppercase tracking-wider">
+                    <span className="w-1.5 h-1.5 bg-sky-450 rounded-full animate-ping"></span>
+                    SMS Integration Authorized
+                  </div>
+                  <h2 className="text-2xl font-extrabold font-display tracking-tight text-white flex items-center gap-2">
+                    <Smartphone className="w-6 h-6 text-emerald-400 shrink-0" />
+                    <span>Africa's Talking SMS API</span>
+                  </h2>
+                  <p className="text-slate-400 text-xs max-w-xl leading-relaxed">
+                    Configure your Africa's Talking SMS gateway parameters. This enables the platform to automatically push real-time outstanding rent balance notifications directly to tenant phone numbers recursively.
+                  </p>
+                </div>
+                
+                <div className="p-4 bg-slate-800/80 backdrop-blur-xs rounded-2xl border border-slate-700/50 text-center min-w-[200px]">
+                  <span className="text-[10px] uppercase font-bold text-slate-400 tracking-widest block mb-1">SMS Username</span>
+                  <div className="font-mono text-xs font-bold text-emerald-400 truncate max-w-[180px]">
+                    {devConfig.atUsername || "sandbox"}
+                  </div>
+                  <span className="text-[9px] text-slate-500 font-mono block mt-1.5">Africa's Talking Portal</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-xs high-contrast-card">
+              <div className="mb-6">
+                <h3 className="font-bold text-sm text-slate-900 font-display flex items-center gap-2">
+                  <Key className="w-4 h-4 text-emerald-500" />
+                  <span>Africa's Talking Keys Register</span>
+                </h3>
+                <p className="text-xs text-slate-500 font-sans mt-0.5">
+                  Update Africa's Talking API keys and user credentials. Overwritten fields will be written dynamically onto `/firebase-applet-config.json` and loaded live.
+                </p>
+              </div>
+
+              {devStatus && (
+                <div className={`p-4 rounded-xl mb-6 text-xs flex items-start gap-2.5 ${
+                  devStatus.type === "success" 
+                    ? "bg-emerald-50 border border-emerald-150 text-emerald-800" 
+                    : "bg-rose-50 border border-rose-150 text-rose-800"
+                }`}>
+                  <AlertCircle className={`w-4 h-4 shrink-0 mt-0.5 ${devStatus.type === "success" ? "text-emerald-500" : "text-rose-500"}`} />
+                  <div>
+                    <span className="font-bold uppercase block mb-0.5">
+                      {devStatus.type === "success" ? "Success Notification" : "Error Occurred"}
+                    </span>
+                    {devStatus.message}
+                  </div>
+                </div>
+              )}
+
+              <form onSubmit={handleUpdateDevConfig} className="space-y-5 font-sans">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-bold text-slate-700 uppercase">Africa's Talking Username</label>
+                    <input
+                      type="text"
+                      required
+                      value={devConfig.atUsername}
+                      onChange={(e) => setDevConfig({ ...devConfig, atUsername: e.target.value })}
+                      className="w-full bg-slate-50 border border-slate-200 focus:bg-white focus:ring-1 focus:ring-emerald-400 text-slate-800 text-xs rounded-lg py-2 px-3 focus:outline-none"
+                      placeholder="e.g. sandbox or production_username"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-bold text-slate-700 uppercase">Africa's Talking API Key</label>
+                    <input
+                      type="text"
+                      required
+                      value={devConfig.atApiKey}
+                      onChange={(e) => setDevConfig({ ...devConfig, atApiKey: e.target.value })}
+                      className="w-full bg-slate-50 border border-slate-200 focus:bg-white focus:ring-1 focus:ring-emerald-400 text-slate-800 text-xs rounded-lg py-2 px-3 focus:outline-none"
+                      placeholder="e.g. d68a3536868df5678484a86bdde56782d4..."
+                    />
+                  </div>
+                </div>
+
+                <div className="pt-4 border-t border-slate-100 flex flex-col sm:flex-row gap-3 justify-end">
+                  <button
+                    type="submit"
+                    disabled={devLoading}
+                    className="px-6 py-2.5 bg-emerald-500 hover:bg-emerald-600 disabled:bg-slate-300 text-slate-950 font-bold text-xs uppercase rounded-xl transition-all shadow-md flex items-center justify-center gap-1.5 cursor-pointer disabled:cursor-not-allowed"
+                  >
+                    <span>{devLoading ? "Synchronizing keys..." : "Update & Sync SMS Keys 🔄"}</span>
+                  </button>
+                </div>
+              </form>
             </div>
           </div>
         )}

@@ -137,8 +137,12 @@ export default function TenantPortal({ tenant, property, onLogout, onOpenSetting
 
       // Fetch official messages/reminders from backend
       await fetchTenantMessages();
-    } catch (err) {
-      console.error("Error fetching resident portal metrics:", err);
+    } catch (err: any) {
+      if (err instanceof Error && err.message.includes("Failed to fetch")) {
+        console.warn("Tenant dynamic sync: Server currently offline or reconnecting.");
+      } else {
+        console.warn("Error fetching resident portal metrics gracefully:", err);
+      }
     }
   };
 
@@ -150,7 +154,7 @@ export default function TenantPortal({ tenant, property, onLogout, onOpenSetting
         setTenantMessages(list);
       }
     } catch (err) {
-      console.error("Error fetching tenant incoming messages:", err);
+      console.warn("Error fetching tenant incoming messages gracefully:", err);
     }
   };
 
@@ -182,7 +186,7 @@ export default function TenantPortal({ tenant, property, onLogout, onOpenSetting
         }
       }
     } catch (err) {
-      console.error("Polling payments ledger error:", err);
+      console.warn("Polling payments ledger error gracefully:", err);
     }
   };
 
