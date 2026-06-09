@@ -67,6 +67,10 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
   const [editRoomStatus, setEditRoomStatus] = useState<string>("");
   const [payments, setPayments] = useState<Payment[]>([]);
   const [maintenance, setMaintenance] = useState<MaintenanceTicket[]>([]);
+  
+  // Caretaker specific dashboard view state
+  const [caretakerDashFilter, setCaretakerDashFilter] = useState<"unpaid" | "paid">("unpaid");
+  const [expandedPaidTenantId, setExpandedPaidTenantId] = useState<string | null>(null);
 
   // Tab State with "clock" view support
   const [activeTab, setActiveTab] = useState<"dashboard" | "rooms" | "tenants" | "payments" | "maintenance" | "properties" | "clock" | "caretakers" | "sms" | "requests" | "developer_google" | "developer_mpesa" | "developer_at">("dashboard");
@@ -1050,15 +1054,17 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
             <span>Tenancy Placement</span>
           </button>
 
-          <button
-            onClick={() => handleTabClick("payments")}
-            className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold rounded-lg transition-all text-left ${
-              activeTab === "payments" ? "sidebar-active text-white shadow-xs" : "text-slate-400 hover:text-white hover:bg-slate-800"
-            }`}
-          >
-            <Receipt className="w-4 h-4" />
-            <span>Payments Ledger</span>
-          </button>
+          {!isCaretaker && (
+            <button
+              onClick={() => handleTabClick("payments")}
+              className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold rounded-lg transition-all text-left ${
+                activeTab === "payments" ? "sidebar-active text-white shadow-xs" : "text-slate-400 hover:text-white hover:bg-slate-800"
+              }`}
+            >
+              <Receipt className="w-4 h-4" />
+              <span>Payments Ledger</span>
+            </button>
+          )}
 
           <button
             onClick={() => handleTabClick("maintenance")}
@@ -1249,22 +1255,26 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
             </div>
             
             {/* 4 BENTO ANALYTICS CARDS */}
-            <section id="bento-grid" className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <div className="high-contrast-card p-5 text-left bg-white">
-                <p className="text-xs text-slate-500 uppercase font-bold tracking-wider">Monthly Collection</p>
-                <h3 className="text-2xl font-bold text-slate-900 mt-1">KES {totalClearedInPlot.toLocaleString()}</h3>
-                <p className="text-xs text-emerald-600 mt-2 flex items-center">✓ Verified through ledger</p>
-              </div>
+            <section id="bento-grid" className={`grid grid-cols-2 ${isCaretaker ? "md:grid-cols-2 max-w-3xl" : "md:grid-cols-4"} gap-4`}>
+              {!isCaretaker && (
+                <>
+                  <div className="high-contrast-card p-5 text-left bg-white">
+                    <p className="text-xs text-slate-500 uppercase font-bold tracking-wider">Monthly Collection</p>
+                    <h3 className="text-2xl font-bold text-slate-900 mt-1">KES {totalClearedInPlot.toLocaleString()}</h3>
+                    <p className="text-xs text-emerald-600 mt-2 flex items-center">✓ Verified through ledger</p>
+                  </div>
 
-              <div className="high-contrast-card p-5 text-left bg-white">
-                <p className="text-xs text-slate-500 uppercase font-bold tracking-wider">Occupancy Rate</p>
-                <h3 className="text-2xl font-bold text-slate-900 mt-1">
-                  {totalUnits > 0 ? ((occupiedUnitsCount / totalUnits) * 100).toFixed(1) : 0}%
-                </h3>
-                <div className="w-full bg-slate-100 h-1.5 rounded-full mt-4">
-                  <div className="bg-blue-500 h-1.5 rounded-full transition-all" style={{ width: `${totalUnits > 0 ? (occupiedUnitsCount / totalUnits) * 100 : 0}%` }}></div>
-                </div>
-              </div>
+                  <div className="high-contrast-card p-5 text-left bg-white">
+                    <p className="text-xs text-slate-500 uppercase font-bold tracking-wider">Occupancy Rate</p>
+                    <h3 className="text-2xl font-bold text-slate-900 mt-1">
+                      {totalUnits > 0 ? ((occupiedUnitsCount / totalUnits) * 100).toFixed(1) : 0}%
+                    </h3>
+                    <div className="w-full bg-slate-100 h-1.5 rounded-full mt-4">
+                      <div className="bg-blue-500 h-1.5 rounded-full transition-all" style={{ width: `${totalUnits > 0 ? (occupiedUnitsCount / totalUnits) * 100 : 0}%` }}></div>
+                    </div>
+                  </div>
+                </>
+              )}
 
               <div className="high-contrast-card p-5 text-left bg-white">
                 <p className="text-xs text-slate-500 uppercase font-bold tracking-wider">Pending Maintenance</p>
@@ -1285,73 +1295,261 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
               
               {/* TENANT OUTSTANDING LEDGER */}
-              <div className="lg:col-span-8 bg-white border border-slate-200 rounded-2xl p-5 shadow-xs text-left high-contrast-card">
-                <h3 className="font-bold text-sm text-slate-900 font-display mb-4">
-                  👥 Resident Balances & Billing States
-                </h3>
+              {isCaretaker ? (
+                <div className="lg:col-span-8 bg-white border border-slate-200 rounded-2xl p-5 shadow-xs text-left high-contrast-card">
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between border-b border-slate-100 pb-3 mb-4 gap-3">
+                    <div>
+                      <h3 className="font-bold text-sm text-slate-900 font-display flex items-center gap-2">
+                        <span>👷</span>
+                        <span>Caretaker Operations Dashboard</span>
+                      </h3>
+                      <p className="text-[11px] text-slate-500">Simple tracking of collections and tenant arrears:</p>
+                    </div>
+                    <div className="flex bg-slate-150 rounded-lg p-0.5 border border-slate-200 shadow-inner">
+                      <button
+                        onClick={() => setCaretakerDashFilter("unpaid")}
+                        className={`px-3 py-1 text-[11px] font-extrabold rounded-md transition-all cursor-pointer ${
+                          caretakerDashFilter === "unpaid" ? "bg-white text-rose-600 shadow-xs" : "text-slate-500 hover:text-slate-800"
+                        }`}
+                      >
+                        ⚠️ Unpaid ({tenants.filter(t => (t.billing?.outstandingBalance || 0) > 0).length})
+                      </button>
+                      <button
+                        onClick={() => setCaretakerDashFilter("paid")}
+                        className={`px-3 py-1 text-[11px] font-extrabold rounded-md transition-all cursor-pointer ${
+                          caretakerDashFilter === "paid" ? "bg-white text-emerald-600 shadow-xs" : "text-slate-500 hover:text-slate-800"
+                        }`}
+                      >
+                        ✓ Paid ({tenants.filter(t => (t.billing?.outstandingBalance || 0) === 0).length})
+                      </button>
+                    </div>
+                  </div>
 
-                {tenants.length === 0 ? (
-                  <div className="py-12 bg-slate-50 border border-dashed border-slate-200 rounded-xl text-center">
-                    <p className="text-xs text-slate-400">No tenants registered on {activeBrandName} yet.</p>
-                  </div>
-                ) : (
-                  <div className="overflow-x-auto rounded-xl border border-slate-200">
-                    <table className="w-full text-left border-collapse text-xs">
-                      <thead>
-                        <tr className="bg-slate-50 border-b border-slate-200 text-slate-400 font-bold">
-                          <th className="p-3">Tenant Name</th>
-                          <th className="p-3 text-center">Room</th>
-                          <th className="p-3">Billing Cycle</th>
-                          <th className="p-3 text-right">Owed</th>
-                          <th className="p-3 text-center">State</th>
-                          <th className="p-3 text-right">M-Pesa Trigger</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {tenants.map((t) => {
-                          const isOwed = (t.billing?.outstandingBalance || 0) > 0;
-                          return (
-                            <tr key={t.tenant_id} className="border-b border-slate-100 hover:bg-slate-50/50">
-                              <td className="p-3">
-                                <span className="font-bold text-slate-900 block">{t.full_name}</span>
-                                <span className="text-[10px] text-slate-400 font-mono">0{t.phone_number.slice(-9)}</span>
-                              </td>
-                              <td className="p-3 text-center font-bold font-mono text-slate-800">
-                                {t.assigned_room_number}
-                              </td>
-                              <td className="p-3 text-slate-500 font-medium">
-                                {t.billing?.cycleLabel || "calculating..."}
-                              </td>
-                              <td className="p-3 text-right font-mono font-bold text-slate-800">
-                                {t.billing?.outstandingBalance?.toLocaleString()} KES
-                              </td>
-                              <td className="p-3 text-center">
-                                <span className={`status-badge ${
-                                  t.billing?.status === "🟢 Paid" ? "bg-emerald-100 text-emerald-700" :
-                                  t.billing?.status === "🟡 Partially Paid" ? "bg-amber-100 text-amber-700" : "bg-red-100 text-red-700"
-                                }`}>
-                                  {t.billing?.status?.substring(2) || "Unpaid"}
-                                </span>
-                              </td>
-                              <td className="p-3 text-right">
-                                <button
-                                  id={`stk-trigger-${t.tenant_id}`}
-                                  disabled={!isOwed || stkTriggering === t.tenant_id}
-                                  onClick={() => handleTriggerMpesaOnBehalf(t)}
-                                  className="px-3 py-1.5 mpesa-green hover:opacity-90 disabled:bg-slate-50 text-white disabled:text-slate-400 font-bold rounded-lg text-[10px] transition-all flex items-center gap-1 ml-auto cursor-pointer"
-                                >
-                                  {stkTriggering === t.tenant_id ? "Triggering..." : "STK Push"}
-                                  <Smartphone className="w-3 h-3 text-white/90" />
-                                </button>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
+                  {tenants.length === 0 ? (
+                    <div className="py-12 bg-slate-50 border border-dashed border-slate-200 rounded-xl text-center">
+                      <p className="text-xs text-slate-400">No tenants registered on {activeBrandName} yet.</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {caretakerDashFilter === "unpaid" && (
+                        <>
+                          {tenants.filter(t => (t.billing?.outstandingBalance || 0) > 0).length === 0 ? (
+                            <div className="py-8 bg-emerald-50 border border-dashed border-emerald-100 rounded-xl text-center text-emerald-700 font-bold text-xs animate-in zoom-in-95 duration-250">
+                              🎉 Congratulations! All tenants under your watch have fully settled their dues.
+                            </div>
+                          ) : (
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                              {tenants.filter(t => (t.billing?.outstandingBalance || 0) > 0).map((t) => {
+                                const owed = t.billing?.outstandingBalance || 0;
+                                const dueDateStr = t.billing?.periodStart 
+                                  ? new Date(t.billing.periodStart).toLocaleDateString("en-KE", { day: 'numeric', month: 'short', year: 'numeric' })
+                                  : "N/A";
+                                return (
+                                  <div key={t.tenant_id} className="p-4 bg-rose-50/50 border border-rose-100 rounded-2xl text-xs space-y-3 relative hover:border-rose-200 transition-all shadow-xs">
+                                    <div className="flex items-start justify-between">
+                                      <div>
+                                        <div className="font-extrabold text-slate-900 text-sm tracking-tight">{t.full_name}</div>
+                                        <div className="text-[10px] text-slate-600 bg-slate-200/60 px-2 py-0.5 rounded-md font-extrabold font-mono inline-block mt-1">Room {t.assigned_room_number}</div>
+                                      </div>
+                                      <div className="text-right">
+                                        <span className="text-[9px] text-rose-500 uppercase font-black tracking-wider block">Owed Amount</span>
+                                        <span className="font-mono text-sm font-black text-rose-700">{owed.toLocaleString()} KES</span>
+                                      </div>
+                                    </div>
+
+                                    <div className="pt-2 border-t border-slate-200/50 flex flex-col gap-1.5 text-slate-600 font-medium">
+                                      <div className="flex items-center justify-between">
+                                        <span>📲 Contacts:</span>
+                                        <a href={`tel:${t.phone_number}`} className="font-mono font-bold text-slate-900 hover:underline">0{t.phone_number.slice(-9)}</a>
+                                      </div>
+                                      <div className="flex items-center justify-between">
+                                        <span>📅 Supposed to Pay on:</span>
+                                        <span className="font-bold text-rose-650 font-mono">{dueDateStr}</span>
+                                      </div>
+                                    </div>
+
+                                    <div className="flex items-center gap-2 pt-1.5">
+                                      <a
+                                        href={`tel:${t.phone_number}`}
+                                        className="flex-1 py-2 bg-slate-800 hover:bg-slate-700 text-white font-bold text-[10px] uppercase rounded-lg text-center transition-all cursor-pointer shadow-sm"
+                                      >
+                                        📞 Call Tenant
+                                      </a>
+                                      <button
+                                        disabled={stkTriggering === t.tenant_id}
+                                        onClick={() => handleTriggerMpesaOnBehalf(t)}
+                                        className="flex-1 py-2 mpesa-green text-white font-bold text-[10px] uppercase rounded-lg transition-all flex items-center justify-center gap-1 cursor-pointer shadow-sm hover:opacity-95"
+                                      >
+                                        {stkTriggering === t.tenant_id ? "Triggering..." : "Trigger STK"}
+                                        <Smartphone className="w-3.5 h-3.5" />
+                                      </button>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </>
+                      )}
+
+                      {caretakerDashFilter === "paid" && (
+                        <>
+                          {tenants.filter(t => (t.billing?.outstandingBalance || 0) === 0).length === 0 ? (
+                            <div className="py-8 bg-slate-50 border border-dashed border-slate-200 rounded-xl text-center text-slate-400 text-xs">
+                              No tenants have completed their payments in this period.
+                            </div>
+                          ) : (
+                            <div className="space-y-2">
+                              {tenants.filter(t => (t.billing?.outstandingBalance || 0) === 0).map((t) => {
+                                const isExpanded = expandedPaidTenantId === t.tenant_id;
+                                
+                                const periodStartObj = t.billing?.periodStart ? new Date(t.billing.periodStart) : null;
+                                const tenantPayments = payments.filter((p) => {
+                                  if (p.tenant_id !== t.tenant_id || p.status !== "Completed") return false;
+                                  if (!periodStartObj) return true;
+                                  return new Date(p.timestamp) >= periodStartObj;
+                                });
+                                
+                                const latestPayment = tenantPayments.length > 0 ? tenantPayments[tenantPayments.length - 1] : null;
+                                
+                                const dateOfPayment = latestPayment 
+                                  ? new Date(latestPayment.timestamp).toLocaleString("en-KE", { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+                                  : periodStartObj 
+                                  ? `Recurring Anniversary (${new Date(periodStartObj).toLocaleDateString("en-KE")})`
+                                  : "N/A";
+
+                                const amountPaid = t.billing?.clearedAmount || latestPayment?.amount || t.billing?.dueAmount || 0;
+                                
+                                const nextPaymentDate = t.billing?.periodEnd
+                                  ? new Date(t.billing.periodEnd).toLocaleDateString("en-KE", { day: 'numeric', month: 'short', year: 'numeric' })
+                                  : "N/A";
+
+                                return (
+                                  <div 
+                                    key={t.tenant_id} 
+                                    onClick={() => setExpandedPaidTenantId(isExpanded ? null : t.tenant_id)}
+                                    className={`p-3.5 border rounded-xl transition-all cursor-pointer text-left ${
+                                      isExpanded 
+                                        ? "bg-slate-900 text-white border-slate-800 shadow-md scale-[0.99]" 
+                                        : "bg-slate-50 border-slate-200 hover:bg-slate-100 hover:border-slate-300"
+                                    }`}
+                                  >
+                                    <div className="flex items-center justify-between">
+                                      <div className="flex items-center gap-2.5">
+                                        <span className="w-2.5 h-2.5 bg-emerald-500 rounded-full animate-pulse shrink-0"></span>
+                                        <div>
+                                          <div className={`font-extrabold ${isExpanded ? "text-white" : "text-slate-900"} text-sm`}>{t.full_name}</div>
+                                          <span className="text-[10px] text-slate-400 font-bold font-mono">Room {t.assigned_room_number} • 0{t.phone_number.slice(-9)}</span>
+                                        </div>
+                                      </div>
+                                      <div className="text-right">
+                                        <span className={`text-[10px] font-black ${isExpanded ? "text-emerald-400 bg-emerald-500/15" : "text-emerald-700 bg-emerald-50"} px-2.5 py-1 rounded-full uppercase tracking-wider`}>
+                                          Paid
+                                        </span>
+                                      </div>
+                                    </div>
+
+                                    {isExpanded && (
+                                      <div className="mt-3.5 pt-3 border-t border-slate-800 grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs animate-in slide-in-from-top-1 duration-150">
+                                        <div className="bg-slate-850 p-2.5 rounded-lg border border-slate-800">
+                                          <span className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">📅 Payment Date</span>
+                                          <div className="font-bold text-slate-100 mt-1">{dateOfPayment}</div>
+                                        </div>
+                                        <div className="bg-slate-850 p-2.5 rounded-lg border border-slate-800">
+                                          <span className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">💰 Amount Paid</span>
+                                          <div className="font-mono font-bold text-emerald-400 mt-1">{amountPaid.toLocaleString()} KES</div>
+                                        </div>
+                                        <div className="bg-slate-850 p-2.5 rounded-lg border border-slate-800">
+                                          <span className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">⌛ Next Payment Date</span>
+                                          <div className="font-bold text-indigo-400 mt-1 font-mono">{nextPaymentDate}</div>
+                                        </div>
+                                      </div>
+                                    )}
+                                    
+                                    {!isExpanded && (
+                                      <div className="mt-2 text-center pt-1 border-t border-slate-150">
+                                        <span className="text-[9px] text-slate-400 font-extrabold uppercase tracking-wide">✨ Click to expand payment date, amount, and next rent due date</span>
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="lg:col-span-8 bg-white border border-slate-200 rounded-2xl p-5 shadow-xs text-left high-contrast-card">
+                  <h3 className="font-bold text-sm text-slate-900 font-display mb-4">
+                    👥 Resident Balances & Billing States
+                  </h3>
+
+                  {tenants.length === 0 ? (
+                    <div className="py-12 bg-slate-50 border border-dashed border-slate-200 rounded-xl text-center">
+                      <p className="text-xs text-slate-400">No tenants registered on {activeBrandName} yet.</p>
+                    </div>
+                  ) : (
+                    <div className="overflow-x-auto rounded-xl border border-slate-200">
+                      <table className="w-full text-left border-collapse text-xs">
+                        <thead>
+                          <tr className="bg-slate-50 border-b border-slate-200 text-slate-400 font-bold">
+                            <th className="p-3">Tenant Name</th>
+                            <th className="p-3 text-center">Room</th>
+                            <th className="p-3">Billing Cycle</th>
+                            <th className="p-3 text-right">Owed</th>
+                            <th className="p-3 text-center">State</th>
+                            <th className="p-3 text-right">M-Pesa Trigger</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {tenants.map((t) => {
+                            const isOwed = (t.billing?.outstandingBalance || 0) > 0;
+                            return (
+                              <tr key={t.tenant_id} className="border-b border-slate-100 hover:bg-slate-50/50">
+                                <td className="p-3">
+                                  <span className="font-bold text-slate-900 block">{t.full_name}</span>
+                                  <span className="text-[10px] text-slate-400 font-mono">0{t.phone_number.slice(-9)}</span>
+                                </td>
+                                <td className="p-3 text-center font-bold font-mono text-slate-800">
+                                  {t.assigned_room_number}
+                                </td>
+                                <td className="p-3 text-slate-500 font-medium">
+                                  {t.billing?.cycleLabel || "calculating..."}
+                                </td>
+                                <td className="p-3 text-right font-mono font-bold text-slate-800">
+                                  {t.billing?.outstandingBalance?.toLocaleString()} KES
+                                </td>
+                                <td className="p-3 text-center">
+                                  <span className={`status-badge ${
+                                    t.billing?.status === "🟢 Paid" ? "bg-emerald-100 text-emerald-700" :
+                                    t.billing?.status === "🟡 Partially Paid" ? "bg-amber-100 text-amber-700" : "bg-red-100 text-red-700"
+                                  }`}>
+                                    {t.billing?.status?.substring(2) || "Unpaid"}
+                                  </span>
+                                </td>
+                                <td className="p-3 text-right">
+                                  <button
+                                    id={`stk-trigger-${t.tenant_id}`}
+                                    disabled={!isOwed || stkTriggering === t.tenant_id}
+                                    onClick={() => handleTriggerMpesaOnBehalf(t)}
+                                    className="px-3 py-1.5 mpesa-green hover:opacity-90 disabled:bg-slate-50 text-white disabled:text-slate-400 font-bold rounded-lg text-[10px] transition-all flex items-center gap-1 ml-auto cursor-pointer"
+                                  >
+                                    {stkTriggering === t.tenant_id ? "Triggering..." : "STK Push"}
+                                    <Smartphone className="w-3 h-3 text-white/90" />
+                                  </button>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* MANUAL BALANCE SETTLEMENT SLATE */}
               <div className="lg:col-span-4 bg-white border border-slate-200 rounded-2xl p-5 shadow-xs text-left flex flex-col justify-between high-contrast-card">
@@ -1501,25 +1699,35 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
                     </div>
 
                     <div>
-                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Monthly Billing Rent (KES)</label>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">
+                        Monthly Billing Rent (KES) {isCaretaker && "(Read Only)"}
+                      </label>
                       <input
                         type="number"
                         placeholder="e.g. 15000"
                         value={editRoomRent}
                         onChange={(e) => setEditRoomRent(e.target.value)}
-                        className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500 font-bold"
+                        disabled={isCaretaker}
+                        className={`w-full border border-slate-200 rounded-xl p-2.5 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500 font-bold ${
+                          isCaretaker ? "bg-slate-100 text-slate-500 cursor-not-allowed" : "bg-slate-50"
+                        }`}
                         required
                       />
                     </div>
 
                     <div>
-                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Security Deposit / Maintenance (KES)</label>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">
+                        Security Deposit / Maintenance (KES) {isCaretaker && "(Read Only)"}
+                      </label>
                       <input
                         type="number"
                         placeholder="e.g. 5000"
                         value={editRoomUtil}
                         onChange={(e) => setEditRoomUtil(e.target.value)}
-                        className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500 font-bold"
+                        disabled={isCaretaker}
+                        className={`w-full border border-slate-200 rounded-xl p-2.5 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500 font-bold ${
+                          isCaretaker ? "bg-slate-100 text-slate-500 cursor-not-allowed" : "bg-slate-50"
+                        }`}
                         required
                       />
                       <p className="text-[9px] text-slate-400 mt-1 leading-normal font-sans">
@@ -1699,13 +1907,15 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
                                 <Edit3 className="w-3 h-3 text-indigo-500" />
                                 <span>Edit</span>
                               </button>
-                              <button
-                                onClick={() => triggerDeleteFlow('room', r.room_number, `Room ${r.room_number}`, r.property_id)}
-                                className="p-1 px-2 text-rose-600 hover:bg-rose-50 rounded-lg transition-all cursor-pointer"
-                                title="Delete unit space permanently"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
+                              {!isCaretaker && (
+                                <button
+                                  onClick={() => triggerDeleteFlow('room', r.room_number, `Room ${r.room_number}`, r.property_id)}
+                                  className="p-1 px-2 text-rose-600 hover:bg-rose-50 rounded-lg transition-all cursor-pointer"
+                                  title="Delete unit space permanently"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              )}
                             </div>
                           </td>
                         </tr>
@@ -2247,13 +2457,15 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
                           >
                             Resolve
                           </button>
-                          <button
-                            onClick={() => triggerDeleteFlow('maintenance', t.ticket_id, `${t.issue_type} Report`)}
-                            className="p-1 px-1.5 ml-1 bg-rose-50 hover:bg-rose-100 text-rose-650 rounded-lg transition-all cursor-pointer"
-                            title="Purge repair log permanently from records"
-                          >
-                            <Trash2 className="w-3 h-3 text-rose-500" />
-                          </button>
+                          {!isCaretaker && (
+                            <button
+                              onClick={() => triggerDeleteFlow('maintenance', t.ticket_id, `${t.issue_type} Report`)}
+                              className="p-1 px-1.5 ml-1 bg-rose-50 hover:bg-rose-100 text-rose-650 rounded-lg transition-all cursor-pointer"
+                              title="Purge repair log permanently from records"
+                            >
+                              <Trash2 className="w-3 h-3 text-rose-500" />
+                            </button>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -2988,14 +3200,16 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
                                 <span>Call Applicant</span>
                               </a>
                               
-                              <button
-                                onClick={() => handleDeleteRoomRequest(request.id)}
-                                disabled={deletingRequestId === request.id}
-                                className="inline-flex items-center gap-1 px-3 py-1.5 bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 font-bold text-[10px] uppercase rounded-lg transition-all cursor-pointer"
-                              >
-                                <Trash2 className="w-3.5 h-3.5 text-rose-550" />
-                                <span>{deletingRequestId === request.id ? "Dismissing..." : "Dismiss"}</span>
-                              </button>
+                              {!isCaretaker && (
+                                <button
+                                  onClick={() => handleDeleteRoomRequest(request.id)}
+                                  disabled={deletingRequestId === request.id}
+                                  className="inline-flex items-center gap-1 px-3 py-1.5 bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 font-bold text-[10px] uppercase rounded-lg transition-all cursor-pointer"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5 text-rose-550" />
+                                  <span>{deletingRequestId === request.id ? "Dismissing..." : "Dismiss"}</span>
+                                </button>
+                              )}
                             </td>
                           </tr>
                         ))}
