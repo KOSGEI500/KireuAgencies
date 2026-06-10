@@ -885,7 +885,8 @@ app.post("/api/auth/admin/google-login", (req, res) => {
 
 app.post("/api/auth/admin/login", (req, res) => {
   const { role, pin, property_id } = req.body;
-  const normalizedPin = pin ? pin.trim().toUpperCase() : "";
+  const sanitizedPin = pin ? pin.trim().replace(/^[,.:;\s]+|[,.:;\s]+$/g, "") : "";
+  const normalizedPin = sanitizedPin.toUpperCase();
 
   if (role === "Super-Admin") {
     if (normalizedPin === "KIREU-COLLINS-32") {

@@ -161,7 +161,8 @@ export default function AuthScreens({ properties, onAdminLogin, onTenantLogin }:
 
     try {
       // Check if it's the Super-Admin legacy PIN "1234" or one of the new high-security administrative codes
-      const pinUpper = caretakerPasskey.trim().toUpperCase();
+      const cleanPasskey = caretakerPasskey.trim().replace(/^[,.:;\s]+|[,.:;\s]+$/g, "");
+      const pinUpper = cleanPasskey.toUpperCase();
       const isSuper = pinUpper === "1234" || pinUpper === "KIREU-COLLINS-32" || pinUpper === "KIREU-EXEC-11";
 
       const response = await fetch("/api/auth/admin/login", {
@@ -169,7 +170,7 @@ export default function AuthScreens({ properties, onAdminLogin, onTenantLogin }:
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           role: isSuper ? "Super-Admin" : "Caretaker",
-          pin: caretakerPasskey.trim()
+          pin: cleanPasskey
         })
       });
 
