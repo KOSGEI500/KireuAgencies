@@ -978,6 +978,11 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
               <p className="text-[9px] text-slate-400 font-mono">
                 {session.email ? session.email : `${session.role} Session`}
               </p>
+              {session.role === "Super-Admin" && (
+                <p className="text-[8px] font-bold text-emerald-450 font-mono tracking-wider mt-1 uppercase bg-emerald-950/40 border border-emerald-500/20 px-1.5 py-0.5 rounded flex items-center justify-center">
+                  Key: {session.email?.toLowerCase().trim() === "collinskosgei32@gmail.com" ? "KIREU-COLLINS-32" : "KIREU-EXEC-11"}
+                </p>
+              )}
             </div>
           </div>
           {/* Close button inside sidebar for mobile drawer */}
@@ -3284,6 +3289,11 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
                   <p>
                     <strong>3. Data Authorization:</strong> Collins (collinskosgei32@gmail.com) and Kireu Executive (kireuagencyltd1@gmail.com) are designated as the primary authorized platform super-administrators with root privileges to terminate leases, clear tenants, and register/delete Plots.
                   </p>
+                  <div className="bg-white/60 p-2.5 rounded-lg border border-slate-200 space-y-1.5 font-mono text-[10px] text-slate-700">
+                    <p className="font-bold text-[9px] uppercase tracking-wider text-slate-400">Security Administrative Passkeys:</p>
+                    <p>• Collins: <span className="font-bold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200/50 select-all">KIREU-COLLINS-32</span></p>
+                    <p>• Kireu Executive: <span className="font-bold text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded border border-indigo-200/50 select-all">KIREU-EXEC-11</span></p>
+                  </div>
                   <p>
                     <strong>4. Caretaker Limitations:</strong> Caretakers or caretewives have read-only access strictly fenced to their assigned property. Deletion actions are strictly disabled for role profiles other than Super-Admin.
                   </p>

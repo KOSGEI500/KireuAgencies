@@ -197,12 +197,12 @@ export default function App() {
           <div id="boot-loader" className="flex flex-col items-center gap-3 relative z-10 animate-pulse">
             <img 
               src="/src/assets/images/kireu_logo_1780960611389.png" 
-              alt="kireu houses Loading" 
+              alt="KIREU HOUSES Loading" 
               className="w-10 h-10 object-contain rounded-xl shadow-md border border-white/10"
               referrerPolicy="no-referrer"
               onError={(e) => { (e.target as HTMLElement).style.display = "none"; }}
             />
-            <p className="text-[10px] text-emerald-400 font-mono tracking-widest uppercase">Initializing kireu houses Desk...</p>
+            <p className="text-[10px] text-emerald-400 font-mono tracking-widest uppercase">INITIALIZING KIREU HOUSES DESK...</p>
           </div>
         )}
       </div>

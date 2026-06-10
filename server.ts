@@ -33,7 +33,35 @@ function getAppConfig() {
 }
 
 // Check for Google application credentials in environment options to prevent blocking hangs
-const hasGcpCredentials = !!(process.env.GOOGLE_APPLICATION_CREDENTIALS || process.env.FIREBASE_SERVICE_ACCOUNT);
+const hasGcpCredentials = !!(
+  process.env.GOOGLE_APPLICATION_CREDENTIALS || 
+  process.env.FIREBASE_SERVICE_ACCOUNT || 
+  process.env.FIREBASE_SERVICE_ACCOUNT_JSON || 
+  (process.env.FIREBASE_PRIVATE_KEY && process.env.FIREBASE_CLIENT_EMAIL)
+);
+
+function buildFirestoreOptions(config: any): any {
+  const options: any = {
+    projectId: config.projectId,
+    databaseId: config.firestoreDatabaseId,
+    ignoreUndefinedProperties: true
+  };
+
+  if (process.env.FIREBASE_SERVICE_ACCOUNT_JSON) {
+    try {
+      options.credentials = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON);
+    } catch (err) {
+      console.error("Failed to parse FIREBASE_SERVICE_ACCOUNT_JSON:", err);
+    }
+  } else if (process.env.FIREBASE_PRIVATE_KEY && process.env.FIREBASE_CLIENT_EMAIL) {
+    options.credentials = {
+      private_key: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, "\n"),
+      client_email: process.env.FIREBASE_CLIENT_EMAIL
+    };
+  }
+  
+  return options;
+}
 
 async function getFirestoreClient(): Promise<any> {
   if (firestore) return firestore;
@@ -46,11 +74,8 @@ async function getFirestoreClient(): Promise<any> {
     }
     try {
       const { Firestore } = await import("@google-cloud/firestore");
-      firestore = new Firestore({
-        projectId: initialConfig.projectId,
-        databaseId: initialConfig.firestoreDatabaseId,
-        ignoreUndefinedProperties: true
-      });
+      const options = buildFirestoreOptions(initialConfig);
+      firestore = new Firestore(options);
       console.log(`Firestore connected dynamically for server-side persistence: Database: ${initialConfig.firestoreDatabaseId}`);
     } catch (err) {
       console.error("Failed to initialize Google Firestore server-side:", err);
@@ -860,12 +885,35 @@ app.post("/api/auth/admin/google-login", (req, res) => {
 
 app.post("/api/auth/admin/login", (req, res) => {
   const { role, pin, property_id } = req.body;
+  const normalizedPin = pin ? pin.trim().toUpperCase() : "";
 
   if (role === "Super-Admin") {
+    if (normalizedPin === "KIREU-COLLINS-32") {
+      return res.json({
+        success: true,
+        session: {
+          role: "Super-Admin",
+          name: "Collins Kosgei",
+          email: "collinskosgei32@gmail.com"
+        }
+      });
+    }
+
+    if (normalizedPin === "KIREU-EXEC-11") {
+      return res.json({
+        success: true,
+        session: {
+          role: "Super-Admin",
+          name: "Kireu Executive",
+          email: "kireuagencyltd1@gmail.com"
+        }
+      });
+    }
+
     if (pin === "1234") {
       return res.json({
         success: true,
-        session: { role: "Super-Admin", name: "Super-Admin Executive" }
+        session: { role: "Super-Admin", name: "Super-Admin Executive", email: "kireuagencyltd1@gmail.com" }
       });
     }
   } else if (role === "Caretaker") {
@@ -1567,11 +1615,8 @@ app.post("/api/developer/firebase-config", async (req, res) => {
         } else {
           try {
             const { Firestore } = await import("@google-cloud/firestore");
-            firestore = new Firestore({
-              projectId: merged.projectId,
-              databaseId: merged.firestoreDatabaseId,
-              ignoreUndefinedProperties: true
-            });
+            const options = buildFirestoreOptions(merged);
+            firestore = new Firestore(options);
             console.log(`Firestore reconnected dynamically: ${merged.firestoreDatabaseId}`);
             
             // Clear memory cache and force fresh synchronization

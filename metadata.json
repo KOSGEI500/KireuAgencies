@@ -1,6 +1,6 @@
 {
-  "name": "kireu houses",
-  "description": "Find premium spaces and modern living options with kireu houses. A high-quality full-stack real estate and multi-property management dashboard with live tenant and staff auth channels.",
+  "name": "KIREU HOUSES",
+  "description": "Find premium spaces and modern living options with KIREU HOUSES. A high-quality full-stack real estate and multi-property management dashboard with live tenant and staff auth channels.",
   "requestFramePermissions": ["camera"],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

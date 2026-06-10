@@ -16,7 +16,7 @@ interface AuthScreensProps {
 
 export default function AuthScreens({ properties, onAdminLogin, onTenantLogin }: AuthScreensProps) {
   const [currentPage, setCurrentPage] = useState<"landing" | "login">("landing");
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<React.ReactNode | null>(null);
   const [loading, setLoading] = useState(false);
   const [showTerms, setShowTerms] = useState(false);
   const [showPrivacy, setShowPrivacy] = useState(false);
@@ -160,8 +160,9 @@ export default function AuthScreens({ properties, onAdminLogin, onTenantLogin }:
     setError(null);
 
     try {
-      // Check if it's the Super-Admin legacy PIN "1234"
-      const isSuper = caretakerPasskey.trim() === "1234";
+      // Check if it's the Super-Admin legacy PIN "1234" or one of the new high-security administrative codes
+      const pinUpper = caretakerPasskey.trim().toUpperCase();
+      const isSuper = pinUpper === "1234" || pinUpper === "KIREU-COLLINS-32" || pinUpper === "KIREU-EXEC-11";
 
       const response = await fetch("/api/auth/admin/login", {
         method: "POST",
@@ -224,8 +225,72 @@ export default function AuthScreens({ properties, onAdminLogin, onTenantLogin }:
       onAdminLogin(data.session);
     } catch (err: any) {
       console.warn("Google Admin Auth Status:", err.message || err);
-      if (err.code === "auth/popup-closed-by-user") {
+      const appAuthDomain = auth.app.options.authDomain || "YOUR_PROJECT.firebaseapp.com";
+      const currentHost = window.location.hostname;
+
+      if (err.code === "auth/unauthorized-domain") {
+        setError(
+          <div className="space-y-3 p-1 text-slate-200">
+            <div className="font-bold text-amber-400 flex items-center gap-1.5 uppercase tracking-wide">
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-ping"></span>
+              Firebase Unauthorized Domain Error
+            </div>
+            <p className="text-[11px] text-slate-350 leading-relaxed text-left">
+              Firebase prevents Google sign-in from unlisted domains. To enable log-in from <span className="font-mono bg-white/5 px-1.5 py-0.5 rounded text-emerald-450 font-bold">{currentHost}</span>, complete these two administrative settings:
+            </p>
+            <div className="space-y-2 text-[10px] text-slate-300 font-mono bg-slate-950/60 p-2.5 rounded-lg border border-white/5 text-left">
+              <div className="border-b border-white/5 pb-1 text-emerald-400 font-bold uppercase tracking-wider text-[9px]">
+                Step 1: Firebase Console
+              </div>
+              <p className="leading-snug">
+                1. Go to your <a href="https://console.firebase.google.com" target="_blank" rel="noopener noreferrer" className="text-emerald-450 hover:underline font-bold">Firebase Console</a>.
+              </p>
+              <p className="leading-snug">
+                2. Navigate to <strong className="text-white font-medium">Build</strong> &gt; <strong className="text-white font-medium">Authentication</strong> &gt; <strong className="text-white font-medium">Settings</strong> &gt; <strong className="text-white font-medium">Authorized domains</strong>.
+              </p>
+              <p className="leading-snug">
+                3. Click <strong className="text-emerald-450 font-bold">Add domain</strong> and enter: <span className="text-emerald-400 bg-white/5 px-1 rounded select-all font-bold">{currentHost}</span>
+              </p>
+
+              <div className="border-b border-white/5 pt-2 pb-1 text-cyan-400 font-bold uppercase tracking-wider text-[9px]">
+                Step 2: Google Cloud Console
+              </div>
+              <p className="leading-snug">
+                1. Go to <a href="https://console.cloud.google.com" target="_blank" rel="noopener noreferrer" className="text-cyan-400 hover:underline font-bold">Google Cloud Console</a>.
+              </p>
+              <p className="leading-snug">
+                2. Navigate to <strong className="text-white font-medium">APIs & Services</strong> &gt; <strong className="text-white font-medium">Credentials</strong>.
+              </p>
+              <p className="leading-snug">
+                3. Click & edit your <strong className="text-white font-medium">Web client (OAuth 2.0 Client ID)</strong>.
+              </p>
+              <p className="leading-snug">
+                4. Under <strong className="text-white font-medium">Authorized redirect URIs</strong>, add: <span className="text-cyan-300 bg-white/5 px-1 rounded select-all font-bold">https://{appAuthDomain}/__/auth/handler</span>
+              </p>
+            </div>
+            <p className="text-[10px] text-slate-400 italic text-left">
+              * Domain lists can take 2-5 minutes to propagate across Google edge servers.
+            </p>
+          </div>
+        );
+      } else if (err.code === "auth/operation-not-allowed") {
+        setError(
+          <div className="space-y-2 p-1 text-slate-200">
+            <p className="font-bold text-amber-400 uppercase tracking-wrap">Google Account Sign-In Off</p>
+            <p className="text-[11px] text-slate-350 leading-relaxed text-left">
+              Google Auth is not enabled in your Firebase console settings under Authorized Providers.
+            </p>
+            <div className="bg-slate-955/60 p-2.5 rounded border border-white/5 text-[10px] text-slate-300 font-mono text-left space-y-1">
+              <p>1. Open <a href="https://console.firebase.google.com" target="_blank" rel="noopener noreferrer" className="text-emerald-450 hover:underline font-bold">Firebase Console</a> &gt; Auth.</p>
+              <p>2. Select the <strong className="text-white">Sign-in method</strong> tab.</p>
+              <p>3. Add <strong className="text-emerald-400 font-bold">Google</strong> to your enabled providers.</p>
+            </div>
+          </div>
+        );
+      } else if (err.code === "auth/popup-closed-by-user") {
         setError("Sign-in popup was closed before completing authentication.");
+      } else if (err.code === "auth/popup-blocked") {
+        setError("The authentication popup was blocked by your browser. Please enable popups for this estate dashboard.");
       } else {
         setError(err.message || "Access Denied: Only authorized directors are granted Google sign-in rights.");
       }
@@ -245,13 +310,13 @@ export default function AuthScreens({ properties, onAdminLogin, onTenantLogin }:
           <div className="flex items-center gap-3">
             <img 
               src="/src/assets/images/kireu_logo_1780960611389.png" 
-              alt="kireu houses Logo" 
+              alt="KIREU HOUSES Logo" 
               className="h-9 w-9 object-contain rounded-xl shadow-md border border-white/10"
               referrerPolicy="no-referrer"
               onError={(e) => { (e.target as HTMLElement).style.display = "none"; }}
             />
             <div className="text-left">
-              <span className="font-extrabold text-lg sm:text-xl tracking-tight text-white block">kireu houses</span>
+              <span className="font-extrabold text-lg sm:text-xl tracking-wider text-white block">KIREU HOUSES</span>
               <span className="text-[9px] font-mono font-bold text-emerald-400 uppercase tracking-widest leading-none mt-0.5 block">Premium Spaces</span>
             </div>
           </div>
@@ -298,7 +363,7 @@ export default function AuthScreens({ properties, onAdminLogin, onTenantLogin }:
             </div>
 
             <h2 className="text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-extrabold font-display text-white tracking-wide uppercase leading-tight drop-shadow-md">
-              Welcome to <span className="text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 via-teal-300 to-white">kireu houses</span>
+              Welcome to <span className="text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 via-teal-300 to-white">KIREU HOUSES</span>
             </h2>
 
             <p className="text-slate-300/90 text-sm sm:text-base md:text-lg lg:text-xl font-light tracking-widest max-w-2xl mx-auto leading-relaxed drop-shadow-sm uppercase">
@@ -334,8 +399,8 @@ export default function AuthScreens({ properties, onAdminLogin, onTenantLogin }:
               {/* BRAND DESK HEAD */}
               <div className="text-left mb-6 flex justify-between items-start">
                 <div>
-                  <h3 className="text-xl font-extrabold font-display text-white">
-                    Sign In to kireu houses
+                  <h3 className="text-xl font-extrabold font-display text-white uppercase tracking-wider">
+                    Sign In to KIREU HOUSES
                   </h3>
                   <p className="text-[11px] font-semibold text-slate-350 mt-0.5">
                     Provide your credentials below to access your portal.
@@ -533,7 +598,7 @@ export default function AuthScreens({ properties, onAdminLogin, onTenantLogin }:
         <div className="max-w-7xl mx-auto w-full px-6 flex flex-col md:flex-row justify-between items-center gap-6">
           <div className="text-left space-y-1">
             <p className="text-sm">
-              &copy; {new Date().getFullYear()} <strong>kireu houses</strong>. All rights reserved.
+              &copy; {new Date().getFullYear()} <strong>KIREU HOUSES</strong>. All rights reserved.
             </p>
             <p className="text-xs text-slate-400 max-w-md">
               Delivering modern housing, structural management, and premium real estate development.
@@ -720,7 +785,7 @@ export default function AuthScreens({ properties, onAdminLogin, onTenantLogin }:
 
             <div className="space-y-4 text-[11px] text-slate-350 font-semibold leading-relaxed">
               <p className="border-l-2 border-emerald-500 pl-3 italic text-slate-400">
-                Welcome to kireu houses. By using this digital platform, you agree to comply with and be bound by the following formal administrative terms.
+                Welcome to KIREU HOUSES. By using this digital platform, you agree to comply with and be bound by the following formal administrative terms.
               </p>
 
               <div className="space-y-1.5">
@@ -783,7 +848,7 @@ export default function AuthScreens({ properties, onAdminLogin, onTenantLogin }:
 
             <div className="space-y-4 text-[11px] text-slate-350 font-semibold leading-relaxed">
               <p className="border-l-2 border-emerald-500 pl-3 italic text-slate-400">
-                Your digital security is our highest priority. This policy details how kireu houses collects, manages, and secures your platform credentials.
+                Your digital security is our highest priority. This policy details how KIREU HOUSES collects, manages, and secures your platform credentials.
               </p>
 
               <div className="space-y-1.5">
