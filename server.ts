@@ -1,9 +1,7 @@
 import express from "express";
 import path from "path";
 import fs from "fs";
-import { createServer as createViteServer } from "vite";
 import dotenv from "dotenv";
-import { Firestore } from "@google-cloud/firestore";
 import { Property, Room, Tenant, Payment, MaintenanceTicket, Caretaker, SMSLog, RoomRequest } from "./src/types";
 
 dotenv.config();
@@ -37,14 +35,17 @@ function getAppConfig() {
 // Check for Google application credentials in environment options to prevent blocking hangs
 const hasGcpCredentials = !!(process.env.GOOGLE_APPLICATION_CREDENTIALS || process.env.FIREBASE_SERVICE_ACCOUNT);
 
-const initialConfig = getAppConfig();
-if (initialConfig.projectId && initialConfig.firestoreDatabaseId) {
-  // On Vercel, do not initialize @google-cloud/firestore unless explicit credentials are provided,
-  // preventing non-routable metadata service discovery requests that trigger a 504 gateway timeout.
-  if (isVercel && !hasGcpCredentials) {
-    console.warn("Firestore initialization bypassed on Vercel: Missing GOOGLE_APPLICATION_CREDENTIALS / FIREBASE_SERVICE_ACCOUNT environment variable. Falling back to local temporary storage to prevent cold-boot hangs.");
-  } else {
+async function getFirestoreClient(): Promise<any> {
+  if (firestore) return firestore;
+  
+  const initialConfig = getAppConfig();
+  if (initialConfig.projectId && initialConfig.firestoreDatabaseId) {
+    if (isVercel && !hasGcpCredentials) {
+      console.warn("Firestore initialization bypassed on Vercel: Missing GOOGLE_APPLICATION_CREDENTIALS / FIREBASE_SERVICE_ACCOUNT environment variable. Falling back to local temporary storage to prevent cold-boot hangs.");
+      return null;
+    }
     try {
+      const { Firestore } = await import("@google-cloud/firestore");
       firestore = new Firestore({
         projectId: initialConfig.projectId,
         databaseId: initialConfig.firestoreDatabaseId,
@@ -55,6 +56,7 @@ if (initialConfig.projectId && initialConfig.firestoreDatabaseId) {
       console.error("Failed to initialize Google Firestore server-side:", err);
     }
   }
+  return firestore;
 }
 
 // Structure of our Parent-Child relational model
@@ -210,12 +212,13 @@ function cleanseUndefined(obj: any): any {
 }
 
 async function syncFromFirestore(): Promise<DBModel> {
-  if (!firestore) {
+  const client = await getFirestoreClient();
+  if (!client) {
     console.warn("Firestore not initialized, falling back to local memory database.");
     return readDB();
   }
   try {
-    const docRef = firestore.collection("app_state").doc("main");
+    const docRef = client.collection("app_state").doc("main");
     const docSnap = await docRef.get();
     if (docSnap.exists) {
       console.log("Loading persistent estate database from Google Cloud Firestore...");
@@ -256,9 +259,10 @@ async function syncFromFirestore(): Promise<DBModel> {
 }
 
 async function syncToFirestore(data: DBModel) {
-  if (!firestore) return;
+  const client = await getFirestoreClient();
+  if (!client) return;
   try {
-    const docRef = firestore.collection("app_state").doc("main");
+    const docRef = client.collection("app_state").doc("main");
     const cleanedData = cleanseUndefined(data);
     await docRef.set(cleanedData);
     console.log("Durable state backup written to Cloud Firestore successfully.");
@@ -1562,6 +1566,7 @@ app.post("/api/developer/firebase-config", async (req, res) => {
           firestore = null;
         } else {
           try {
+            const { Firestore } = await import("@google-cloud/firestore");
             firestore = new Firestore({
               projectId: merged.projectId,
               databaseId: merged.firestoreDatabaseId,
@@ -1608,6 +1613,7 @@ async function startServer() {
   // by Vercel edge routing rules. Skip local listeners and dev middleware.
   if (!process.env.VERCEL) {
     if (process.env.NODE_ENV !== "production") {
+      const { createServer: createViteServer } = await import("vite");
       const vite = await createViteServer({
         server: { middlewareMode: true },
         appType: "spa"

@@ -1223,7 +1223,7 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
                     {activeBrandName} Dashboard
                   </h2>
                   <p className="text-slate-400 text-xs max-w-xl leading-relaxed">
-                    Estate Admin: <strong className="text-slate-200 font-bold">{session.name}</strong>{isCaretaker && " (Caretaker Locks Active)"}. Supervise collections, occupancy stats, and automated resident M-Pesa billings.
+                    Estate Admin: <strong className="text-slate-200 font-bold">{session.name}</strong>{isCaretaker && " (Caretaker Locks Active)"}. Supervise resident profiles, pending maintenance, and automated resident M-Pesa billings.
                   </p>
                 </div>
                 
@@ -1254,28 +1254,8 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
               </div>
             </div>
             
-            {/* 4 BENTO ANALYTICS CARDS */}
-            <section id="bento-grid" className={`grid grid-cols-2 ${isCaretaker ? "md:grid-cols-2 max-w-3xl" : "md:grid-cols-4"} gap-4`}>
-              {!isCaretaker && (
-                <>
-                  <div className="high-contrast-card p-5 text-left bg-white">
-                    <p className="text-xs text-slate-500 uppercase font-bold tracking-wider">Monthly Collection</p>
-                    <h3 className="text-2xl font-bold text-slate-900 mt-1">KES {totalClearedInPlot.toLocaleString()}</h3>
-                    <p className="text-xs text-emerald-600 mt-2 flex items-center">✓ Verified through ledger</p>
-                  </div>
-
-                  <div className="high-contrast-card p-5 text-left bg-white">
-                    <p className="text-xs text-slate-500 uppercase font-bold tracking-wider">Occupancy Rate</p>
-                    <h3 className="text-2xl font-bold text-slate-900 mt-1">
-                      {totalUnits > 0 ? ((occupiedUnitsCount / totalUnits) * 100).toFixed(1) : 0}%
-                    </h3>
-                    <div className="w-full bg-slate-100 h-1.5 rounded-full mt-4">
-                      <div className="bg-blue-500 h-1.5 rounded-full transition-all" style={{ width: `${totalUnits > 0 ? (occupiedUnitsCount / totalUnits) * 100 : 0}%` }}></div>
-                    </div>
-                  </div>
-                </>
-              )}
-
+            {/* 2 BENTO ANALYTICS CARDS */}
+            <section id="bento-grid" className="grid grid-cols-2 max-w-3xl gap-4">
               <div className="high-contrast-card p-5 text-left bg-white">
                 <p className="text-xs text-slate-500 uppercase font-bold tracking-wider">Pending Maintenance</p>
                 <h3 className="text-2xl font-bold text-amber-600 mt-1">{String(pendingTicketsCount + resolvingTicketsCount).padStart(2, '0')} Tickets</h3>
