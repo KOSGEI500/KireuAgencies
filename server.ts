@@ -11,8 +11,13 @@ dotenv.config();
 const app = express();
 const PORT = 3000;
 
+// Detect Vercel execution environment
+const isVercel = !!process.env.VERCEL;
+
 // Path to durable container storage for JSON-based relational model
-const DB_FILE = path.join(process.cwd(), "server-db.json");
+const DB_FILE = isVercel
+  ? path.join("/tmp", "server-db.json")
+  : path.join(process.cwd(), "server-db.json");
 
 // Dynamic Firestore setup
 const configPath = path.join(process.cwd(), "firebase-applet-config.json");
@@ -29,17 +34,26 @@ function getAppConfig() {
   return {};
 }
 
+// Check for Google application credentials in environment options to prevent blocking hangs
+const hasGcpCredentials = !!(process.env.GOOGLE_APPLICATION_CREDENTIALS || process.env.FIREBASE_SERVICE_ACCOUNT);
+
 const initialConfig = getAppConfig();
 if (initialConfig.projectId && initialConfig.firestoreDatabaseId) {
-  try {
-    firestore = new Firestore({
-      projectId: initialConfig.projectId,
-      databaseId: initialConfig.firestoreDatabaseId,
-      ignoreUndefinedProperties: true
-    });
-    console.log(`Firestore connected dynamically for server-side persistence: Database: ${initialConfig.firestoreDatabaseId}`);
-  } catch (err) {
-    console.error("Failed to initialize Google Firestore server-side:", err);
+  // On Vercel, do not initialize @google-cloud/firestore unless explicit credentials are provided,
+  // preventing non-routable metadata service discovery requests that trigger a 504 gateway timeout.
+  if (isVercel && !hasGcpCredentials) {
+    console.warn("Firestore initialization bypassed on Vercel: Missing GOOGLE_APPLICATION_CREDENTIALS / FIREBASE_SERVICE_ACCOUNT environment variable. Falling back to local temporary storage to prevent cold-boot hangs.");
+  } else {
+    try {
+      firestore = new Firestore({
+        projectId: initialConfig.projectId,
+        databaseId: initialConfig.firestoreDatabaseId,
+        ignoreUndefinedProperties: true
+      });
+      console.log(`Firestore connected dynamically for server-side persistence: Database: ${initialConfig.firestoreDatabaseId}`);
+    } catch (err) {
+      console.error("Failed to initialize Google Firestore server-side:", err);
+    }
   }
 }
 
@@ -1543,20 +1557,25 @@ app.post("/api/developer/firebase-config", async (req, res) => {
       
       // Re-initialize Firestore client if credentials existed
       if (merged.projectId && merged.firestoreDatabaseId) {
-        try {
-          firestore = new Firestore({
-            projectId: merged.projectId,
-            databaseId: merged.firestoreDatabaseId,
-            ignoreUndefinedProperties: true
-          });
-          console.log(`Firestore reconnected dynamically: ${merged.firestoreDatabaseId}`);
-          
-          // Clear memory cache and force fresh synchronization
-          cachedDb = null;
-          await syncFromFirestore();
-        } catch (err: any) {
-          console.error("Firestore client re-initialization failed:", err);
-          return res.status(500).json({ error: "Configuration written to disk, but connection to dynamic Firestore failed: " + err.message });
+        if (isVercel && !hasGcpCredentials) {
+          console.warn("Firestore dynamic re-connection bypassed on Vercel due to missing GCP credentials.");
+          firestore = null;
+        } else {
+          try {
+            firestore = new Firestore({
+              projectId: merged.projectId,
+              databaseId: merged.firestoreDatabaseId,
+              ignoreUndefinedProperties: true
+            });
+            console.log(`Firestore reconnected dynamically: ${merged.firestoreDatabaseId}`);
+            
+            // Clear memory cache and force fresh synchronization
+            cachedDb = null;
+            await syncFromFirestore();
+          } catch (err: any) {
+            console.error("Firestore client re-initialization failed:", err);
+            return res.status(500).json({ error: "Configuration written to disk, but connection to dynamic Firestore failed: " + err.message });
+          }
         }
       }
       
