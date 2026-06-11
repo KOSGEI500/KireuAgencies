@@ -84,6 +84,9 @@ export default function App() {
       const cachedAdmin = localStorage.getItem("prop_admin_session");
       if (cachedAdmin) {
         setAdminSession(JSON.parse(cachedAdmin));
+        if (!window.location.hash || window.location.hash === "#/") {
+          window.location.hash = "#/admin";
+        }
       }
 
       const cachedTenantSession = localStorage.getItem("prop_tenant_session");
@@ -91,6 +94,9 @@ export default function App() {
       if (cachedTenantSession && cachedTenantProfile) {
         setTenantSession(JSON.parse(cachedTenantSession));
         setTenantProfile(JSON.parse(cachedTenantProfile));
+        if (!window.location.hash || window.location.hash === "#/") {
+          window.location.hash = "#/tenant";
+        }
       }
     } catch (err) {
       console.error("Session restoration error:", err);
@@ -140,6 +146,7 @@ export default function App() {
   const handleAdminLogin = (session: AdminSession) => {
     setAdminSession(session);
     localStorage.setItem("prop_admin_session", JSON.stringify(session));
+    window.location.hash = "#/admin";
   };
 
   const handleTenantLogin = (session: TenantSession, tenantData: Tenant) => {
@@ -147,6 +154,7 @@ export default function App() {
     setTenantProfile(tenantData);
     localStorage.setItem("prop_tenant_session", JSON.stringify(session));
     localStorage.setItem("prop_tenant_profile", JSON.stringify(tenantData));
+    window.location.hash = "#/tenant";
   };
 
   const handleLogout = () => {
@@ -156,6 +164,7 @@ export default function App() {
     localStorage.removeItem("prop_admin_session");
     localStorage.removeItem("prop_tenant_session");
     localStorage.removeItem("prop_tenant_profile");
+    window.location.hash = "#/";
   };
 
   if (!ready || (fetchError && properties.length === 0)) {

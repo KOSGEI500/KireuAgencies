@@ -55,6 +55,29 @@ export default function TenantPortal({ tenant, property, onLogout, onOpenSetting
   const [activeTab, setActiveTab] = useState<"all" | "billing" | "mpesa" | "receipts" | "repairs" | "history" | "alerts">("all");
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
+  useEffect(() => {
+    const handleTenantHashChange = () => {
+      const hash = window.location.hash;
+      if (hash.startsWith("#/tenant/")) {
+        const tab = hash.replace("#/tenant/", "") as any;
+        const validTabs = ["all", "billing", "mpesa", "receipts", "repairs", "history", "alerts"];
+        if (validTabs.includes(tab)) {
+          setActiveTab(tab);
+        }
+      } else if (hash === "#/tenant") {
+        setActiveTab("all");
+      }
+    };
+
+    window.addEventListener("hashchange", handleTenantHashChange);
+    // Initial sync
+    handleTenantHashChange();
+
+    return () => {
+      window.removeEventListener("hashchange", handleTenantHashChange);
+    };
+  }, []);
+
   // Billing details
   const [billingDetails, setBillingDetails] = useState<any>(null);
   const [room, setRoom] = useState<Room | null>(null);
@@ -873,7 +896,7 @@ Thank you for your prompt transaction. Please keep this slip for reference.
           {/* Tenant profile summary */}
           <button
             onClick={() => {
-              setActiveTab("all");
+              window.location.hash = "#/tenant/all";
               setSidebarOpen(false);
             }}
             className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs font-bold rounded-xl transition-all text-left cursor-pointer ${
@@ -895,7 +918,7 @@ Thank you for your prompt transaction. Please keep this slip for reference.
           {/* Billing Summary Option */}
           <button
             onClick={() => {
-              setActiveTab("billing");
+              window.location.hash = "#/tenant/billing";
               setSidebarOpen(false);
             }}
             className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs font-bold rounded-xl transition-all text-left cursor-pointer ${
@@ -911,7 +934,7 @@ Thank you for your prompt transaction. Please keep this slip for reference.
           {/* Pay Rent Option */}
           <button
             onClick={() => {
-              setActiveTab("mpesa");
+              window.location.hash = "#/tenant/mpesa";
               setSidebarOpen(false);
             }}
             className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs font-bold rounded-xl transition-all text-left cursor-pointer ${
@@ -927,7 +950,7 @@ Thank you for your prompt transaction. Please keep this slip for reference.
           {/* Cleared Payment Receipts Option */}
           <button
             onClick={() => {
-              setActiveTab("receipts");
+              window.location.hash = "#/tenant/receipts";
               setSidebarOpen(false);
             }}
             className={`w-full flex items-center gap-2.5 px-3 py-1.5 text-xs font-bold rounded-xl transition-all text-left cursor-pointer ${
@@ -949,7 +972,7 @@ Thank you for your prompt transaction. Please keep this slip for reference.
           {/* Repair Request Desk Option */}
           <button
             onClick={() => {
-              setActiveTab("repairs");
+              window.location.hash = "#/tenant/repairs";
               setSidebarOpen(false);
             }}
             className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs font-bold rounded-xl transition-all text-left cursor-pointer ${
@@ -965,7 +988,7 @@ Thank you for your prompt transaction. Please keep this slip for reference.
           {/* Filed Repair History Option */}
           <button
             onClick={() => {
-              setActiveTab("history");
+              window.location.hash = "#/tenant/history";
               setSidebarOpen(false);
             }}
             className={`w-full flex items-center gap-2.5 px-3 py-1.5 text-xs font-bold rounded-xl transition-all text-left cursor-pointer ${
@@ -981,7 +1004,7 @@ Thank you for your prompt transaction. Please keep this slip for reference.
           {/* Real-time Alerts Option */}
           <button
             onClick={() => {
-              setActiveTab("alerts");
+              window.location.hash = "#/tenant/alerts";
               setSidebarOpen(false);
             }}
             className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs font-bold rounded-xl transition-all text-left cursor-pointer ${

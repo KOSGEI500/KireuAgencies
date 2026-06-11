@@ -2,7 +2,7 @@ import express from "express";
 import path from "path";
 import fs from "fs";
 import dotenv from "dotenv";
-import { Property, Room, Tenant, Payment, MaintenanceTicket, Caretaker, SMSLog, RoomRequest } from "./src/types";
+import { Property, Room, Tenant, Payment, MaintenanceTicket, Caretaker, SMSLog, RoomRequest, ContactInfo } from "./src/types";
 
 dotenv.config();
 
@@ -94,6 +94,8 @@ interface DBModel {
   caretakers?: Caretaker[];
   sms_logs?: SMSLog[];
   room_requests?: RoomRequest[];
+  developer_contact?: ContactInfo;
+  owner_contact?: ContactInfo;
 }
 
 // Initial seed data representing real plots/houses across Kenya
@@ -209,7 +211,19 @@ const INITIAL_DB: DBModel = {
       status: "Pending",
       created_at: "2026-06-05T19:20:00.000Z"
     }
-  ]
+  ],
+  developer_contact: {
+    name: "Collins Kosgei",
+    phone: "254712345678",
+    email: "collinskosgei32@gmail.com",
+    background: "Collins is a verified information technology professional and a scientist, a full web developer with experience. For a good website call or WhatsApp Collins."
+  },
+  owner_contact: {
+    name: "Onewee",
+    phone: "254711222333",
+    email: "onewee@kireu.com",
+    background: "Onewee of Kireu is the premier owner of Kireu modern verified assets, ensuring safety, reliability, and modern luxury standards."
+  }
 };
 
 // Local in-memory cache of the database to guarantee synchronous readDB() performance
@@ -316,6 +330,22 @@ function readDB(): DBModel {
     if (!parsed.caretakers) parsed.caretakers = [];
     if (!parsed.sms_logs) parsed.sms_logs = [];
     if (!parsed.room_requests) parsed.room_requests = [];
+    if (!parsed.developer_contact) {
+      parsed.developer_contact = {
+        name: "Collins Kosgei",
+        phone: "254712345678",
+        email: "collinskosgei32@gmail.com",
+        background: "Collins is a verified information technology professional and a scientist, a full web developer with experience. For a good website call or WhatsApp Collins."
+      };
+    }
+    if (!parsed.owner_contact) {
+      parsed.owner_contact = {
+        name: "Onewee",
+        phone: "254711222333",
+        email: "onewee@kireu.com",
+        background: "Onewee of Kireu is the premier owner of Kireu modern verified assets, ensuring safety, reliability, and modern luxury standards."
+      };
+    }
     cachedDb = parsed;
     return parsed;
   } catch (error) {
@@ -435,6 +465,66 @@ app.use(express.json({ limit: "15mb" }));
 // 1. PROPERTY PORT DEV / CHECK
 app.get("/api/health", (req, res) => {
   res.json({ status: "healthy", time: new Date().toISOString() });
+});
+
+// DATABASE IMPORT/EXPORT ENDPOINTS for stateless backup/restore
+app.get("/api/db/export", (req, res) => {
+  const db = readDB();
+  res.json(db);
+});
+
+app.post("/api/db/import", (req, res) => {
+  const { dbData } = req.body;
+  if (!dbData || typeof dbData !== "object") {
+    return res.status(400).json({ error: "Invalid database structure." });
+  }
+  
+  // Basic validation that it's a valid DBModel
+  if (!Array.isArray(dbData.properties) || !Array.isArray(dbData.rooms)) {
+    return res.status(400).json({ error: "Uploaded JSON structure is not valid. Must contain 'properties' and 'rooms' arrays." });
+  }
+
+  // Auto-sanitize and normalize arrays to safeguard old schemas
+  if (!dbData.tenants) dbData.tenants = [];
+  if (!dbData.payments) dbData.payments = [];
+  if (!dbData.maintenance) dbData.maintenance = [];
+  if (!dbData.caretakers) dbData.caretakers = [];
+  if (!dbData.sms_logs) dbData.sms_logs = [];
+  if (!dbData.room_requests) dbData.room_requests = [];
+
+  writeDB(dbData);
+  res.json({ success: true, message: "Stateless database imported and synchronized successfully." });
+});
+
+// CONTACT INFO ENDPOINTS
+app.get("/api/contact", (req, res) => {
+  const db = readDB();
+  res.json({
+    developer_contact: db.developer_contact,
+    owner_contact: db.owner_contact
+  });
+});
+
+app.post("/api/contact/developer", (req, res) => {
+  const db = readDB();
+  const { name, phone, email, background } = req.body;
+  if (!name || !phone || !email || !background) {
+    return res.status(400).json({ error: "All developer contact fields (name, phone, email, background) are required." });
+  }
+  db.developer_contact = { name, phone, email, background };
+  writeDB(db);
+  res.json({ success: true, message: "Developer contact information updated successfully.", developer_contact: db.developer_contact });
+});
+
+app.post("/api/contact/owner", (req, res) => {
+  const db = readDB();
+  const { name, phone, email, background } = req.body;
+  if (!name || !phone || !email || !background) {
+    return res.status(400).json({ error: "All owner contact fields (name, phone, email, background) are required." });
+  }
+  db.owner_contact = { name, phone, email, background };
+  writeDB(db);
+  res.json({ success: true, message: "Kireu Owner contact information updated successfully.", owner_contact: db.owner_contact });
 });
 
 // 2. PROPERTIES ENDPOINTS

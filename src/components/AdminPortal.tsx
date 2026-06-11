@@ -3,7 +3,8 @@ import { Property, Room, Tenant, Payment, MaintenanceTicket, AdminSession, RoomR
 import { 
   Building2, Users, Receipt, Wrench, Shield, LogOut, CheckCircle, Plus, 
   Trash2, PlusCircle, Smartphone, Sparkles, Filter, Landmark, MapPin, Eye, AlertCircle, Clock,
-  Menu, X, User, MessageSquare, ListCollapse, Building, ExternalLink, Settings, Key, Edit3
+  Menu, X, User, MessageSquare, ListCollapse, Building, ExternalLink, Settings, Key, Edit3,
+  AlertTriangle, Database
 } from "lucide-react";
 
 interface AdminPortalProps {
@@ -73,8 +74,46 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
   const [expandedPaidTenantId, setExpandedPaidTenantId] = useState<string | null>(null);
 
   // Tab State with "clock" view support
-  const [activeTab, setActiveTab] = useState<"dashboard" | "rooms" | "tenants" | "payments" | "maintenance" | "properties" | "clock" | "caretakers" | "sms" | "requests" | "developer_google" | "developer_mpesa" | "developer_at">("dashboard");
+  const [activeTab, setActiveTab] = useState<"dashboard" | "rooms" | "tenants" | "payments" | "maintenance" | "properties" | "clock" | "caretakers" | "sms" | "requests" | "developer_google" | "developer_mpesa" | "developer_at" | "contact_config">("dashboard");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  useEffect(() => {
+    const handleAdminHashChange = () => {
+      const hash = window.location.hash;
+      if (hash.startsWith("#/admin/")) {
+        const tab = hash.replace("#/admin/", "") as any;
+        const validTabs = ["dashboard", "rooms", "tenants", "payments", "maintenance", "properties", "clock", "caretakers", "sms", "requests", "developer_google", "developer_mpesa", "developer_at", "contact_config"];
+        if (validTabs.includes(tab)) {
+          setActiveTab(tab);
+        }
+      } else if (hash === "#/admin") {
+        setActiveTab("dashboard");
+      }
+    };
+
+    window.addEventListener("hashchange", handleAdminHashChange);
+    // Initial check on mount
+    handleAdminHashChange();
+
+    return () => {
+      window.removeEventListener("hashchange", handleAdminHashChange);
+    };
+  }, []);
+
+  // States for Developer & Owner Contact Configuration
+  const [devName, setDevName] = useState("");
+  const [devPhone, setDevPhone] = useState("");
+  const [devEmail, setDevEmail] = useState("");
+  const [devBackground, setDevBackground] = useState("");
+
+  const [ownerName, setOwnerName] = useState("");
+  const [ownerPhone, setOwnerPhone] = useState("");
+  const [ownerEmail, setOwnerEmail] = useState("");
+  const [ownerBackground, setOwnerBackground] = useState("");
+
+  const [loadingContact, setLoadingContact] = useState(false);
+  const [contactSuccessMsg, setContactSuccessMsg] = useState("");
+  const [contactErrorMsg, setContactErrorMsg] = useState("");
 
   // States and Handlers for Vacant Room Requests
   const [roomRequests, setRoomRequests] = useState<RoomRequest[]>([]);
@@ -120,8 +159,8 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
     }
   };
 
-  const handleTabClick = (tab: "dashboard" | "rooms" | "tenants" | "payments" | "maintenance" | "properties" | "clock" | "caretakers" | "sms" | "requests" | "developer_google" | "developer_mpesa" | "developer_at") => {
-    setActiveTab(tab);
+  const handleTabClick = (tab: "dashboard" | "rooms" | "tenants" | "payments" | "maintenance" | "properties" | "clock" | "caretakers" | "sms" | "requests" | "developer_google" | "developer_mpesa" | "developer_at" | "contact_config") => {
+    window.location.hash = `#/admin/${tab}`;
     setMobileMenuOpen(false);
   };
 
@@ -164,10 +203,193 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
     mpesaShortcode: "",
     mpesaPasskey: "",
     atApiKey: "",
-    atUsername: ""
+    atUsername: "",
+    googleClientId: "",
+    googleClientSecret: "",
+    productionUrl: ""
   });
   const [devLoading, setDevLoading] = useState(false);
   const [devStatus, setDevStatus] = useState<{ type: "success" | "error"; message: string } | null>(null);
+  const [rawFirebaseConfigText, setRawFirebaseConfigText] = useState("");
+
+  // Stateless recovery / local browser-side backup variables
+  const [localBackupData, setLocalBackupData] = useState<any | null>(null);
+  const [showRestoreBanner, setShowRestoreBanner] = useState(false);
+  const [isRestoringBackup, setIsRestoringBackup] = useState(false);
+
+  // Perform automatic browser-side database backup
+  const autoBackupDatabase = async () => {
+    try {
+      const response = await fetch("/api/db/export");
+      if (response.ok) {
+        const fullDb = await response.json();
+        if (fullDb && Array.isArray(fullDb.properties)) {
+          // Verify that it is NOT the default seed database with three default properties
+          const hasCustomChanges = fullDb.properties.some(
+            (p: any) => p.property_id !== "prop_1" && p.property_id !== "prop_2" && p.property_id !== "prop_3"
+          ) || fullDb.properties.length !== 3;
+
+          if (hasCustomChanges) {
+            const backupPayload = {
+              timestamp: Date.now(),
+              db: fullDb
+            };
+            localStorage.setItem("kireu_houses_auto_backup", JSON.stringify(backupPayload));
+            setLocalBackupData(backupPayload);
+          }
+        }
+      }
+    } catch (err) {
+      console.warn("Unable to perform background database auto-backup:", err);
+    }
+  };
+
+  // Run the restore procedure to import a database object the user provides
+  const handleImportDatabase = async (dbData: any) => {
+    setIsRestoringBackup(true);
+    try {
+      const response = await fetch("/api/db/import", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dbData })
+      });
+      if (response.ok) {
+        alert("Database restored and synchronized successfully! Reloading information...");
+        setShowRestoreBanner(false);
+        onRefreshProperties();
+        setTimeout(() => {
+          fetchPropertySpecifics();
+        }, 800);
+      } else {
+        const errData = await response.json();
+        alert("Failed to restore database: " + (errData.error || "Unknown error"));
+      }
+    } catch (err: any) {
+      alert("Error synchronizing restored database: " + err.message);
+    } finally {
+      setIsRestoringBackup(false);
+    }
+  };
+
+  // Monitor database reset circumstances to provide immediate restoration assist
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem("kireu_houses_auto_backup");
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed && parsed.db && parsed.db.properties) {
+          setLocalBackupData(parsed);
+          
+          // Verify if active server database matches the default seed state
+          const isDefaultSeed = properties.length === 3 && 
+            properties.some(p => p.property_id === "prop_1") && 
+            properties.some(p => p.property_id === "prop_2") && 
+            properties.some(p => p.property_id === "prop_3");
+            
+          if (isDefaultSeed) {
+            // Check if the backup differs from the seed data
+            const backupProps = parsed.db.properties;
+            const hasDelta = backupProps.length !== 3 || 
+              !backupProps.some((p: any) => p.property_id === "prop_1") ||
+              !backupProps.some((p: any) => p.property_id === "prop_2") ||
+              !backupProps.some((p: any) => p.property_id === "prop_3");
+
+            if (hasDelta) {
+              setShowRestoreBanner(true);
+            }
+          } else {
+            setShowRestoreBanner(false);
+          }
+        }
+      }
+    } catch (e) {
+      console.warn("Failed to check auto backup discrepancy", e);
+    }
+  }, [properties]);
+
+  const handleParseAndApplyConfig = () => {
+    if (!rawFirebaseConfigText.trim()) {
+      setDevStatus({ type: "error", message: "Please paste a Firebase configuration block or JSON first." });
+      return;
+    }
+
+    try {
+      let parsed: any = null;
+      // Try parsing as JSON first
+      try {
+        let cleanText = rawFirebaseConfigText.trim();
+        // Extract content between first { and last } if it looks like js code
+        if (cleanText.includes("{") && cleanText.includes("}")) {
+          const start = cleanText.indexOf("{");
+          const end = cleanText.lastIndexOf("}");
+          cleanText = cleanText.slice(start, end + 1);
+        }
+        // Convert lazy JS object representation to valid JSON
+        let prepared = cleanText
+          .replace(/([{,]\s*)([a-zA-Z0-9_-]+)(\s*:)/g, '$1"$2"$3')
+          .replace(/'/g, '"')
+          .replace(/,\s*([\]}])/g, '$1');
+
+        parsed = JSON.parse(prepared);
+      } catch (jsonErr) {
+        console.warn("JSON-like parse failed, trying regex fallback", jsonErr);
+      }
+
+      // If that did not work or missed fields, perform robust line-by-line regex parsing
+      const extracted: Record<string, string> = {};
+      const targetKeys = [
+        "projectId",
+        "appId",
+        "apiKey",
+        "authDomain",
+        "storageBucket",
+        "messagingSenderId",
+        "measurementId",
+        "firestoreDatabaseId"
+      ];
+
+      // Safe matching for each key
+      targetKeys.forEach((key) => {
+        const regex = new RegExp(`['"]?${key}['"]?\\s*:\\s*['"\`]([^'"\`\\n,;]+)['"\`]`, "i");
+        const match = rawFirebaseConfigText.match(regex);
+        if (match && match[1]) {
+          extracted[key] = match[1].trim();
+        }
+      });
+
+      // Merge results
+      const finalObj = { ...(parsed || {}), ...extracted };
+
+      // Validate we extracted at least projectId and apiKey
+      if (!finalObj.projectId || !finalObj.apiKey) {
+        setDevStatus({ 
+          type: "error", 
+          message: "Failed to recognize Firebase configuration. Make sure the pasted text contains 'projectId' and 'apiKey' fields." 
+        });
+        return;
+      }
+
+      setDevConfig(prev => ({
+        ...prev,
+        projectId: finalObj.projectId || prev.projectId,
+        appId: finalObj.appId || prev.appId,
+        apiKey: finalObj.apiKey || prev.apiKey,
+        authDomain: finalObj.authDomain || prev.authDomain,
+        firestoreDatabaseId: finalObj.firestoreDatabaseId || prev.firestoreDatabaseId || "(default)",
+        storageBucket: finalObj.storageBucket || prev.storageBucket,
+        messagingSenderId: finalObj.messagingSenderId || prev.messagingSenderId,
+        measurementId: finalObj.measurementId || prev.measurementId || ""
+      }));
+
+      setDevStatus({
+        type: "success",
+        message: `Successfully parsed Firebase configuration for project "${finalObj.projectId}"! All form fields below have been updated live. Click "Update & Sync" below to write and load this configuration.`
+      });
+      setRawFirebaseConfigText(""); // clear the textarea
+    } catch (err: any) {
+      setDevStatus({ type: "error", message: "Failed parsing config: " + (err.message || err) });
+    }
+  };
 
   useEffect(() => {
     if (activeTab.startsWith("developer_") && session.email?.toLowerCase().trim() === "collinskosgei32@gmail.com") {
@@ -193,7 +415,10 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
             mpesaShortcode: data.mpesaShortcode || "",
             mpesaPasskey: data.mpesaPasskey || "",
             atApiKey: data.atApiKey || "",
-            atUsername: data.atUsername || ""
+            atUsername: data.atUsername || "",
+            googleClientId: data.googleClientId || "",
+            googleClientSecret: data.googleClientSecret || "",
+            productionUrl: data.productionUrl || ""
           });
         })
         .catch(err => {
@@ -337,6 +562,91 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
     }
   }, [activeTab]);
 
+  // Contact info configuration functions
+  const fetchContactConfig = async () => {
+    try {
+      setLoadingContact(true);
+      const res = await fetch("/api/contact");
+      if (res.ok) {
+        const data = await res.json();
+        if (data.developer_contact) {
+          setDevName(data.developer_contact.name || "");
+          setDevPhone(data.developer_contact.phone || "");
+          setDevEmail(data.developer_contact.email || "");
+          setDevBackground(data.developer_contact.background || "");
+        }
+        if (data.owner_contact) {
+          setOwnerName(data.owner_contact.name || "");
+          setOwnerPhone(data.owner_contact.phone || "");
+          setOwnerEmail(data.owner_contact.email || "");
+          setOwnerBackground(data.owner_contact.background || "");
+        }
+      }
+    } catch (err) {
+      console.error("Error loading contacts for config:", err);
+    } finally {
+      setLoadingContact(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === "contact_config") {
+      fetchContactConfig();
+    }
+  }, [activeTab]);
+
+  const handleUpdateDeveloperContact = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setContactSuccessMsg("");
+    setContactErrorMsg("");
+    try {
+      const response = await fetch("/api/contact/developer", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: devName,
+          phone: devPhone,
+          email: devEmail,
+          background: devBackground
+        })
+      });
+      const data = await response.json();
+      if (response.ok) {
+        setContactSuccessMsg("Developer contact information updated successfully! This will immediately reflect on the landing page.");
+      } else {
+        setContactErrorMsg(data.error || "Failed to update developer contact information.");
+      }
+    } catch (err) {
+      setContactErrorMsg("Server or connection error. Please try again.");
+    }
+  };
+
+  const handleUpdateOwnerContact = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setContactSuccessMsg("");
+    setContactErrorMsg("");
+    try {
+      const response = await fetch("/api/contact/owner", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: ownerName,
+          phone: ownerPhone,
+          email: ownerEmail,
+          background: ownerBackground
+        })
+      });
+      const data = await response.json();
+      if (response.ok) {
+        setContactSuccessMsg("Kireu Owner contact information updated successfully! This will immediately reflect on the landing page.");
+      } else {
+        setContactErrorMsg(data.error || "Failed to update owner contact information.");
+      }
+    } catch (err) {
+      setContactErrorMsg("Server or connection error. Please try again.");
+    }
+  };
+
   // Regular dashboard polling (refresh telemetry every 5s)
   useEffect(() => {
     const interval = setInterval(() => {
@@ -437,6 +747,9 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
       // Append log entry cleanly
       const logStr = `[${new Date().toLocaleTimeString()}] Auto-Sync: Verified ${loadedRooms.length} rooms, ${loadedTenants.length} tenants, ${loadedPayments.length} payments, ${loadedTickets.length} tickets, and ${smsCount} communication remnants.`;
       setSyncLogs(prev => [logStr, ...prev.slice(0, 49)]);
+
+      // Automate local backup to persist across server resets
+      autoBackupDatabase();
     } catch (error: any) {
       if (error instanceof Error && error.message.includes("Failed to fetch")) {
         console.warn("Telemetry background tick: Server is currently reconnecting or offline.");
@@ -1132,6 +1445,16 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
           )}
 
           <button
+            onClick={() => handleTabClick("contact_config")}
+            className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold rounded-lg transition-all text-left ${
+              activeTab === "contact_config" ? "sidebar-active text-white shadow-xs" : "text-slate-400 hover:text-white hover:bg-slate-800"
+            }`}
+          >
+            <Settings className="w-4 h-4 text-emerald-400" />
+            <span>Public Contact Config</span>
+          </button>
+
+          <button
             onClick={() => handleTabClick("clock")}
             className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold rounded-lg transition-all text-left ${
               activeTab === "clock" ? "sidebar-active text-white shadow-xs" : "text-slate-400 hover:text-white hover:bg-slate-800"
@@ -1210,6 +1533,36 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
 
       {/* MAIN VIEWPORT SCREEN AREA */}
       <main className="flex-1 overflow-y-auto p-4 md:p-8 space-y-6">
+        
+        {/* Dynamic Stateless Restore Alert Banner */}
+        {showRestoreBanner && localBackupData && (
+          <div className="bg-amber-500/10 border border-amber-500/20 rounded-2xl p-4 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 text-left animate-in slide-in-from-top-4 duration-300">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2 text-amber-600 font-bold text-xs uppercase tracking-wider">
+                <AlertTriangle className="w-4 h-4 shrink-0 text-amber-500" />
+                <span>Stateless Server Reset Detected</span>
+              </div>
+              <p className="text-xs text-slate-800 leading-relaxed font-sans max-w-2xl">
+                Collins, your previous custom plots (such as deleted Milimani Court or custom houses) have reset on the stateless server. We detected a browser backup from <strong>{new Date(localBackupData.timestamp).toLocaleString()}</strong>. Would you like to restore your exact custom plots setup instantly?
+              </p>
+            </div>
+            <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
+              <button
+                onClick={() => setShowRestoreBanner(false)}
+                className="px-3 py-1.5 hover:bg-slate-100 text-slate-500 font-bold text-xs uppercase rounded-lg transition-all"
+              >
+                Dismiss
+              </button>
+              <button
+                disabled={isRestoringBackup}
+                onClick={() => handleImportDatabase(localBackupData.db)}
+                className="px-4 py-1.5 bg-amber-500 hover:bg-amber-650 active:bg-amber-700 text-slate-950 font-extrabold text-xs uppercase rounded-xl transition-all shadow-md flex items-center gap-1.5 cursor-pointer"
+              >
+                <span>{isRestoringBackup ? "Restoring..." : "Restore Backup 📂"}</span>
+              </button>
+            </div>
+          </div>
+        )}
         
         {/* 2. WORKING DASHBOARD TAB */}
         {activeTab === "dashboard" && (
@@ -3366,6 +3719,45 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
                 </div>
               )}
 
+              {/* Dynamic Config Importer Box */}
+              <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 mb-6 space-y-3">
+                <div>
+                  <h4 className="font-bold text-xs text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                    <span className="inline-block w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                    ⚡ Swap Database: Paste Entire Web Config Object
+                  </h4>
+                  <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
+                    Switch between your <strong>test databases</strong> and <strong>live client databases</strong> instantly. Paste the complete configuration object snippet or JSON directly from the Firebase console, then click parse to auto-fill all keys below.
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  <textarea
+                    rows={4}
+                    value={rawFirebaseConfigText}
+                    onChange={(e) => setRawFirebaseConfigText(e.target.value)}
+                    className="w-full bg-white border border-slate-200 focus:ring-1 focus:ring-emerald-400 text-slate-800 text-xs rounded-xl py-2 px-3 font-mono focus:outline-none placeholder-slate-400"
+                    placeholder={`const firebaseConfig = {
+  apiKey: "AIzaSy...",
+  authDomain: "your-project.firebaseapp.com",
+  projectId: "your-project-id",
+  storageBucket: "your-project.firebasestorage.app",
+  messagingSenderId: "765432198",
+  appId: "1:765432198:web:765abc...",
+  measurementId: "G-XXXXXXXX"
+};`}
+                  />
+                  <div className="flex gap-2 justify-end">
+                    <button
+                      type="button"
+                      onClick={handleParseAndApplyConfig}
+                      className="px-4 py-1.5 bg-slate-800 hover:bg-slate-900 active:bg-slate-950 text-emerald-400 font-bold text-[10px] uppercase rounded-lg transition-all shadow-sm flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <span>Parse & Populate Configuration 🪄</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+
               <form onSubmit={handleUpdateDevConfig} className="space-y-5 font-sans">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                   <div className="space-y-1.5">
@@ -3464,6 +3856,110 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
                   </div>
                 </div>
 
+                {/* Google Sign-In & Auth & production Domain setup fields */}
+                <div className="pt-6 border-t border-slate-100 space-y-4">
+                  <div>
+                    <h4 className="font-bold text-xs text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
+                      <Shield className="w-4 h-4 text-emerald-500 shrink-0" />
+                      <span>Security & Google Authentication Setup</span>
+                    </h4>
+                    <p className="text-[11px] text-slate-500 mt-1">
+                      Configure your production keys and application redirect hooks dynamically. These credentials authorize live OAuth client handshakes in production.
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                    <div className="space-y-1.5">
+                      <label className="block text-xs font-bold text-slate-700 uppercase">Production Website Link / Domain URL (Vercel)</label>
+                      <input
+                        type="url"
+                        value={devConfig.productionUrl}
+                        onChange={(e) => setDevConfig({ ...devConfig, productionUrl: e.target.value })}
+                        className="w-full bg-slate-50 border border-slate-200 focus:bg-white focus:ring-1 focus:ring-emerald-400 text-slate-800 text-xs rounded-lg py-2 px-3 focus:outline-none font-mono"
+                        placeholder="e.g. https://kireu-houses.vercel.app"
+                      />
+                      <p className="text-[10px] text-slate-400">Used dynamically for origins listing callbacks.</p>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="block text-xs font-bold text-slate-700 uppercase">Google Sign-In Client ID</label>
+                      <input
+                        type="text"
+                        value={devConfig.googleClientId}
+                        onChange={(e) => setDevConfig({ ...devConfig, googleClientId: e.target.value })}
+                        className="w-full bg-slate-50 border border-slate-200 focus:bg-white focus:ring-1 focus:ring-emerald-400 text-slate-800 text-xs rounded-lg py-2 px-3 focus:outline-none font-mono"
+                        placeholder="e.g. 1234567890-abc123xyz.apps.googleusercontent.com"
+                      />
+                      <p className="text-[10px] text-slate-400">Google OAuth 2.0 Web Client identification code.</p>
+                    </div>
+
+                    <div className="space-y-1.5 md:col-span-2">
+                      <label className="block text-xs font-bold text-slate-700 uppercase">Google Sign-In Client Secret</label>
+                      <input
+                        type="password"
+                        value={devConfig.googleClientSecret}
+                        onChange={(e) => setDevConfig({ ...devConfig, googleClientSecret: e.target.value })}
+                        className="w-full bg-slate-50 border border-slate-200 focus:bg-white focus:ring-1 focus:ring-emerald-400 text-slate-800 text-xs rounded-lg py-2 px-3 focus:outline-none font-mono"
+                        placeholder="Enter secret code (e.g. GOCSPX-...)"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Auth URLs helper cards */}
+                  <div className="p-4 bg-emerald-50/50 border border-emerald-100 rounded-2xl text-[11.5px] leading-relaxed text-slate-700 space-y-2.5">
+                    <p className="font-bold text-emerald-850 uppercase tracking-wide flex items-center gap-1">
+                      <span>💡 Dynamic Google OAuth Credentials helper:</span>
+                    </p>
+                    <p className="text-slate-500 text-[11px]">
+                      Copy the domains and redirect endpoints listed below. Paste them in your <a href="https://console.cloud.google.com" target="_blank" rel="noopener noreferrer" className="text-emerald-600 underline font-bold">Google Cloud Developer Console</a> under <strong>APIs & Services &gt; Credentials &gt; OAuth 2.0 Web Client</strong> parameters:
+                    </p>
+                    
+                    <div className="space-y-3 font-mono text-[10px] text-slate-800">
+                      <div>
+                        <span className="block font-bold text-slate-500 uppercase text-[9px] mb-1">1. Authorized JavaScript Origins</span>
+                        <div className="flex flex-col gap-1.5">
+                          <div className="bg-white border border-slate-200 px-3 py-1.5 rounded flex justify-between items-center shadow-xs">
+                            <span className="text-slate-600">{window.location.origin} <span className="text-[9px] text-slate-400 font-sans font-normal">(Local Development)</span></span>
+                            <button
+                              type="button"
+                              onClick={() => { navigator.clipboard.writeText(window.location.origin); alert("Copied local origin link!"); }}
+                              className="text-[9px] text-slate-500 hover:text-emerald-500 font-bold uppercase border border-slate-200 hover:border-emerald-300 px-1.5 py-0.5 rounded transition-all bg-slate-50 hover:bg-emerald-50/20 cursor-pointer"
+                            >
+                              Copy
+                            </button>
+                          </div>
+                          {devConfig.productionUrl && (
+                            <div className="bg-white border border-slate-200 px-3 py-1.5 rounded flex justify-between items-center shadow-xs">
+                              <span className="text-emerald-800 font-semibold">{devConfig.productionUrl} <span className="text-[9px] text-emerald-600 font-sans font-normal">(Live Production)</span></span>
+                              <button
+                                type="button"
+                                onClick={() => { navigator.clipboard.writeText(devConfig.productionUrl); alert("Copied production Web link!"); }}
+                                className="text-[9px] text-slate-500 hover:text-emerald-500 font-bold uppercase border border-slate-200 hover:border-emerald-300 px-1.5 py-0.5 rounded transition-all bg-slate-50 hover:bg-emerald-50/20 cursor-pointer"
+                              >
+                                Copy
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      <div>
+                        <span className="block font-bold text-slate-500 uppercase text-[9px] mb-1">2. Authorized Redirect URIs (Required by Google Auth Auth-Provider)</span>
+                        <div className="bg-white border border-slate-200 px-3 py-1.5 rounded flex justify-between items-center shadow-xs">
+                          <span className="text-indigo-800 font-semibold">{`https://${devConfig.projectId || 'your-project-id'}.firebaseapp.com/__/auth/handler`}</span>
+                          <button
+                            type="button"
+                            onClick={() => { navigator.clipboard.writeText(`https://${devConfig.projectId || 'your-project-id'}.firebaseapp.com/__/auth/handler`); alert("Copied callback endpoint details!"); }}
+                            className="text-[9px] text-slate-500 hover:text-emerald-500 font-bold uppercase border border-slate-200 hover:border-emerald-300 px-1.5 py-0.5 rounded transition-all bg-slate-50 hover:bg-emerald-50/20 cursor-pointer"
+                          >
+                            Copy
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
                 <div className="pt-4 border-t border-slate-100 flex flex-col sm:flex-row gap-3 justify-end">
                   <button
                     type="submit"
@@ -3474,6 +3970,120 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
                   </button>
                 </div>
               </form>
+            </div>
+
+            {/* Database Master Backup & Stateless Recovery Panel */}
+            <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-xs high-contrast-card">
+              <div className="mb-4">
+                <h3 className="font-bold text-sm text-slate-900 font-display flex items-center gap-2">
+                  <Database className="w-4 h-4 text-emerald-500" />
+                  <span>Database Master Backup & Stateless Recovery</span>
+                </h3>
+                <p className="text-xs text-slate-500 font-sans mt-0.5">
+                  Cloud databases on stateless environments (such as Vercel) can cold-boot reset to default seed data when database connections sleep or reboot. Keep master copies to restore instantly.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Export Card */}
+                <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl flex flex-col justify-between">
+                  <div>
+                    <h4 className="font-bold text-xs text-slate-800 uppercase tracking-wider flex items-center gap-2">
+                      <span>📤 Export Database Backup</span>
+                    </h4>
+                    <p className="text-[11px] text-slate-500 mt-1">
+                      Download a structured <code>.json</code> file containing all your houses, tenants, rentals, payments, and SMS logs safely.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      try {
+                        const response = await fetch("/api/db/export");
+                        if (!response.ok) throw new Error("Server failed to export.");
+                        const data = await response.json();
+                        const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement("a");
+                        a.href = url;
+                        a.download = `kireu_houses_backup_${new Date().toISOString().split("T")[0]}.json`;
+                        a.click();
+                        URL.revokeObjectURL(url);
+                      } catch (err: any) {
+                        alert("Export failed: " + err.message);
+                      }
+                    }}
+                    className="mt-4 w-full py-2 bg-slate-800 hover:bg-slate-900 text-white font-bold text-xs uppercase rounded-xl transition-all shadow-sm cursor-pointer text-center"
+                  >
+                    Download Database JSON File
+                  </button>
+                </div>
+
+                {/* Import Card */}
+                <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl flex flex-col justify-between">
+                  <div>
+                    <h4 className="font-bold text-xs text-slate-800 uppercase tracking-wider flex items-center gap-2">
+                      <span>📥 Import Database Backup</span>
+                    </h4>
+                    <p className="text-[11px] text-slate-500 mt-1">
+                      Overwrite the active server database with a previously exported <code>.json</code> backup file. This overrides all current listings.
+                    </p>
+                  </div>
+                  <div className="mt-4">
+                    <input
+                      type="file"
+                      accept=".json"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+                        const reader = new FileReader();
+                        reader.onload = async (event) => {
+                          try {
+                            const text = event.target?.result as string;
+                            const parsed = JSON.parse(text);
+                            if (confirm("Are you sure you want to replace the entire active database with this backup file? This will overwrite everything.")) {
+                              await handleImportDatabase(parsed);
+                            }
+                          } catch (err: any) {
+                            alert("Invalid JSON file selected: " + err.message);
+                          }
+                        };
+                        reader.readAsText(file);
+                      }}
+                      className="hidden"
+                      id="db-backup-file-input"
+                    />
+                    <label
+                      htmlFor="db-backup-file-input"
+                      className="w-full inline-block py-2 bg-emerald-500 hover:bg-emerald-600 text-slate-950 text-center font-bold text-xs uppercase rounded-xl transition-all shadow-sm cursor-pointer border border-emerald-400"
+                    >
+                      Choose JSON Backup File
+                    </label>
+                  </div>
+                </div>
+              </div>
+
+              {localBackupData && (
+                <div className="mt-4 p-4 bg-amber-50/50 border border-amber-100 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-3 font-sans">
+                  <div>
+                    <div className="font-bold text-[11px] text-amber-800 uppercase flex items-center gap-1.5">
+                      <span className="w-1.5 h-1.5 bg-amber-500 rounded-full animate-ping"></span>
+                      <span>Active Browser storage backup:</span>
+                    </div>
+                    <p className="text-[10px] text-slate-600 font-sans mt-0.5">
+                      Updated automatically based on your activities: {new Date(localBackupData.timestamp).toLocaleString()}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={isRestoringBackup}
+                    onClick={() => handleImportDatabase(localBackupData.db)}
+                    className="px-4 py-1.5 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold text-[10px] uppercase rounded-lg transition-all shadow-sm cursor-pointer"
+                  >
+                    Restore from Browser Backup
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -3696,6 +4306,212 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
                   </button>
                 </div>
               </form>
+            </div>
+          </div>
+        )}
+
+        {/* 12. PUBLIC CONTACTS CONFIGURATION TAB */}
+        {activeTab === "contact_config" && (
+          <div className="space-y-6 text-left animate-in fade-in duration-200">
+            <div className="bg-slate-900 rounded-3xl p-6 sm:p-8 text-white relative overflow-hidden border border-slate-800 shadow-xl">
+              <div className="absolute top-0 right-0 w-96 h-96 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none"></div>
+              
+              <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6 relative z-10">
+                <div className="space-y-2">
+                  <div className="inline-flex items-center gap-2 px-3 py-1 bg-emerald-500/15 rounded-full border border-emerald-500/20 text-emerald-400 font-mono text-[10px] font-bold uppercase tracking-wider">
+                    <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-ping"></span>
+                    Landing Page Contact Customization
+                  </div>
+                  <h2 className="text-2xl font-extrabold font-display tracking-tight text-white flex items-center gap-2">
+                    <PlusCircle className="w-6 h-6 text-emerald-400 shrink-0" />
+                    <span>Public Contact Configurator</span>
+                  </h2>
+                  <p className="text-slate-400 text-xs max-w-xl leading-relaxed font-sans">
+                    Configure the developer and owner information blocks displayed instantly when users click <strong className="text-emerald-400">Contact Us</strong> on the main landing page. Updates made here commit dynamically to durable storage.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Notifications panel */}
+            {(contactSuccessMsg || contactErrorMsg) && (
+              <div className={`p-4 rounded-xl text-xs flex items-start gap-2.5 ${
+                contactSuccessMsg 
+                  ? "bg-emerald-50 border border-emerald-150 text-emerald-800"
+                  : "bg-rose-50 border border-rose-150 text-rose-800"
+              }`}>
+                <AlertCircle className={`w-4 h-4 shrink-0 mt-0.5 ${contactSuccessMsg ? "text-emerald-500" : "text-rose-500"}`} />
+                <div>
+                  <span className="font-bold uppercase block mb-0.5">
+                    {contactSuccessMsg ? "Success Alert" : "Adjustment Error"}
+                  </span>
+                  {contactSuccessMsg || contactErrorMsg}
+                </div>
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* PANEL 1: ESTATE OWNER INFO SETUP */}
+              <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-xs high-contrast-card flex flex-col justify-between">
+                <div>
+                  <div className="mb-5">
+                    <div className="flex items-center gap-2">
+                      <div className="p-1.5 bg-emerald-50 rounded-lg">
+                        <Building className="w-4 h-4 text-emerald-600" />
+                      </div>
+                      <h3 className="font-bold text-sm text-slate-900 font-display uppercase tracking-wider">
+                        Kireu Owner Details
+                      </h3>
+                    </div>
+                    <p className="text-xs text-slate-500 mt-1">
+                      Customize Onewee's primary credentials, cellular contacts, and administrative background summary.
+                    </p>
+                  </div>
+
+                  <form onSubmit={handleUpdateOwnerContact} className="space-y-4 font-sans max-w-full">
+                    <div className="space-y-1.5">
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">Owner name</label>
+                      <input
+                        type="text"
+                        required
+                        value={ownerName}
+                        onChange={(e) => setOwnerName(e.target.value)}
+                        placeholder="e.g. Onewee"
+                        className="w-full bg-slate-50 border border-slate-200 focus:bg-white focus:ring-1 focus:ring-emerald-400 text-slate-800 text-xs rounded-lg py-2 px-3 focus:outline-none"
+                      />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">Phone number (Direct)</label>
+                      <input
+                        type="text"
+                        required
+                        value={ownerPhone}
+                        onChange={(e) => setOwnerPhone(e.target.value)}
+                        placeholder="e.g. 254711222333"
+                        className="w-full bg-slate-50 border border-slate-200 focus:bg-white focus:ring-1 focus:ring-emerald-400 text-slate-800 text-xs rounded-lg py-2 px-3 focus:outline-none"
+                      />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">Email Address</label>
+                      <input
+                        type="email"
+                        required
+                        value={ownerEmail}
+                        onChange={(e) => setOwnerEmail(e.target.value)}
+                        placeholder="e.g. onewee@kireu.com"
+                        className="w-full bg-slate-50 border border-slate-200 focus:bg-white focus:ring-1 focus:ring-emerald-400 text-slate-800 text-xs rounded-lg py-2 px-3 focus:outline-none"
+                      />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">Background information</label>
+                      <textarea
+                        required
+                        rows={4}
+                        value={ownerBackground}
+                        onChange={(e) => setOwnerBackground(e.target.value)}
+                        placeholder="Provide deep background details for Onewee of Kireu Houses..."
+                        className="w-full bg-slate-50 border border-slate-200 focus:bg-white focus:ring-1 focus:ring-emerald-400 text-slate-800 text-xs rounded-lg py-2 px-3 focus:outline-none resize-none font-sans"
+                      />
+                    </div>
+
+                    <div className="pt-3 border-t border-slate-100 flex justify-end">
+                      <button
+                        type="submit"
+                        disabled={loadingContact}
+                        className="px-5 py-2.5 bg-slate-900 text-white hover:bg-slate-850 disabled:bg-slate-350 text-[10px] tracking-wider font-extrabold uppercase rounded-xl transition-all shadow-md flex items-center justify-center gap-1.5 cursor-pointer"
+                      >
+                        <span>{loadingContact ? "Updating..." : "Save Owner Details ✔"}</span>
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+
+              {/* PANEL 2: DEVELOPER INFO SETUP */}
+              <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-xs high-contrast-card flex flex-col justify-between">
+                <div>
+                  <div className="mb-5">
+                    <div className="flex items-center gap-2">
+                      <div className="p-1.5 bg-blue-50 rounded-lg">
+                        <Users className="w-4 h-4 text-blue-600" />
+                      </div>
+                      <h3 className="font-bold text-sm text-slate-900 font-display uppercase tracking-wider">
+                        Developer Contact details
+                      </h3>
+                    </div>
+                    <p className="text-xs text-slate-500 mt-1">
+                      Customize Collins Kosgei's professional contact numbers and scientist portfolio background summary.
+                    </p>
+                  </div>
+
+                  <form onSubmit={handleUpdateDeveloperContact} className="space-y-4 font-sans max-w-full">
+                    <div className="space-y-1.5">
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">Developer name</label>
+                      <input
+                        type="text"
+                        required
+                        value={devName}
+                        onChange={(e) => setDevName(e.target.value)}
+                        placeholder="e.g. Collins Kosgei"
+                        className="w-full bg-slate-50 border border-slate-200 focus:bg-white focus:ring-1 focus:ring-emerald-400 text-slate-800 text-xs rounded-lg py-2 px-3 focus:outline-none"
+                      />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">Phone Number (Call or WhatsApp)</label>
+                      <input
+                        type="text"
+                        required
+                        value={devPhone}
+                        onChange={(e) => setDevPhone(e.target.value)}
+                        placeholder="e.g. 254712345678"
+                        className="w-full bg-slate-50 border border-slate-200 focus:bg-white focus:ring-1 focus:ring-emerald-400 text-slate-800 text-xs rounded-lg py-2 px-3 focus:outline-none"
+                      />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">Email Address</label>
+                      <input
+                        type="email"
+                        required
+                        value={devEmail}
+                        onChange={(e) => setDevEmail(e.target.value)}
+                        placeholder="e.g. collinskosgei32@gmail.com"
+                        className="w-full bg-slate-50 border border-slate-200 focus:bg-white focus:ring-1 focus:ring-emerald-400 text-slate-800 text-xs rounded-lg py-2 px-3 focus:outline-none"
+                      />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">Background &amp; Profile information (Single block message)</label>
+                      <textarea
+                        required
+                        rows={4}
+                        value={devBackground}
+                        onChange={(e) => setDevBackground(e.target.value)}
+                        placeholder="e.g. Collins is a verified information technology and a scientist, full web developer with experience, for good website call or WhatsApp..."
+                        className="w-full bg-slate-50 border border-slate-200 focus:bg-white focus:ring-1 focus:ring-emerald-400 text-slate-800 text-xs rounded-lg py-2 px-3 focus:outline-none resize-none font-sans"
+                      />
+                    </div>
+
+                    <div className="pt-3 border-t border-slate-100 flex justify-end">
+                      <button
+                        type="submit"
+                        disabled={loadingContact}
+                        className="px-5 py-2.5 bg-slate-900 text-white hover:bg-slate-850 disabled:bg-slate-350 text-[10px] tracking-wider font-extrabold uppercase rounded-xl transition-all shadow-md flex items-center justify-center gap-1.5 cursor-pointer"
+                      >
+                        <span>{loadingContact ? "Updating..." : "Save Developer Details ✔"}</span>
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            </div>
+
+            <div className="p-4 bg-emerald-50/45 border border-emerald-100 rounded-2xl text-[11px] text-emerald-850 tracking-wide font-sans leading-relaxed text-center">
+              💡 <strong>Instant Sync Tip:</strong> Changing these fields writes directly onto the database file. They instantly refresh client modals on the estate landing pages.
             </div>
           </div>
         )}

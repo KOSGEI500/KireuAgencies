@@ -91,3 +91,11 @@ export interface RoomRequest {
   submitted_at: string;
 }
 
+export interface ContactInfo {
+  name: string;
+  phone: string;
+  email: string;
+  background: string;
+}
+
+

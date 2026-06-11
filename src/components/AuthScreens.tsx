@@ -3,7 +3,7 @@ import { Property, AdminSession, TenantSession } from "../types";
 import { 
   Building2, Phone, Key, ShieldAlert, LogIn, User, Smartphone, 
   ArrowRight, ShieldCheck, HelpCircle, Info, Sparkles, LogOut, ArrowLeft,
-  Building, CheckCircle2, ChevronRight, Moon, Star, Mail
+  Building, CheckCircle2, ChevronRight, Moon, Star, Mail, Code, X
 } from "lucide-react";
 import { auth, googleProvider } from "../firebase";
 import { signInWithPopup } from "firebase/auth";
@@ -21,6 +21,94 @@ export default function AuthScreens({ properties, onAdminLogin, onTenantLogin }:
   const [showTerms, setShowTerms] = useState(false);
   const [showPrivacy, setShowPrivacy] = useState(false);
 
+  // Contact info and Developer info dynamically fetched from backend
+  const [contacts, setContacts] = useState<{
+    developer_contact: { name: string; phone: string; email: string; background: string };
+    owner_contact: { name: string; phone: string; email: string; background: string };
+  } | null>(null);
+  const [showContactModal, setShowContactModal] = useState(false);
+
+  const fetchContacts = async () => {
+    try {
+      const response = await fetch("/api/contact");
+      if (response.ok) {
+        const data = await response.json();
+        setContacts(data);
+      }
+    } catch (e) {
+      console.warn("Error fetching contact info:", e);
+    }
+  };
+
+  React.useEffect(() => {
+    const handleHashChange = () => {
+      const hash = window.location.hash;
+      if (hash === "#/login") {
+        setCurrentPage("login");
+        setShowContactModal(false);
+        setShowRequestHouseModal(false);
+        setShowTerms(false);
+        setShowPrivacy(false);
+        setError(null);
+      } else if (hash === "#/contact") {
+        setCurrentPage("landing");
+        setShowContactModal(true);
+        setShowRequestHouseModal(false);
+        setShowTerms(false);
+        setShowPrivacy(false);
+        fetchContacts();
+      } else if (hash === "#/request-house") {
+        setCurrentPage("landing");
+        setShowContactModal(false);
+        setShowRequestHouseModal(true);
+        setShowTerms(false);
+        setShowPrivacy(false);
+      } else if (hash === "#/terms") {
+        setShowTerms(true);
+        setShowContactModal(false);
+        setShowRequestHouseModal(false);
+        setShowPrivacy(false);
+      } else if (hash === "#/privacy") {
+        setShowPrivacy(true);
+        setShowContactModal(false);
+        setShowRequestHouseModal(false);
+        setShowTerms(false);
+      } else {
+        // default / landing
+        setCurrentPage("landing");
+        setShowContactModal(false);
+        setShowRequestHouseModal(false);
+        setShowTerms(false);
+        setShowPrivacy(false);
+      }
+    };
+
+    window.addEventListener("hashchange", handleHashChange);
+    handleHashChange(); // Run on mount
+
+    return () => {
+      window.removeEventListener("hashchange", handleHashChange);
+    };
+  }, []);
+
+  // Automated rotating features / view statements
+  const [statementIndex, setStatementIndex] = useState(0);
+  const statementsList = [
+    "Smart rent payment processing with automated M-Pesa STK push notifications",
+    "Instant maintenance ticket logging with direct local caretaker assignment",
+    "Secure tenancy records, automated digital bill statement history, and SMS notifications",
+    "Verified luxury living portfolios featuring custom residencies of high modern standing",
+    "Fully digitalized property portfolio management of verified luxury apartments"
+  ];
+
+  React.useEffect(() => {
+    if (currentPage !== "landing") return;
+    const interval = setInterval(() => {
+      setStatementIndex((prev) => (prev + 1) % statementsList.length);
+    }, 4500);
+    return () => clearInterval(interval);
+  }, [currentPage, statementsList.length]);
+
   // Form Inputs
   const [tenantUsername, setTenantUsername] = useState("");
   const [tenantPin, setTenantPin] = useState("");
@@ -37,31 +125,37 @@ export default function AuthScreens({ properties, onAdminLogin, onTenantLogin }:
   const [requestSuccess, setRequestSuccess] = useState<string | null>(null);
   const [requestError, setRequestError] = useState<string | null>(null);
 
-  const handleOpenRequestHouse = async () => {
-    setShowRequestHouseModal(true);
-    setRequestSuccess(null);
-    setRequestError(null);
-    setFetchingVacantRooms(true);
-    try {
-      const response = await fetch("/api/rooms/vacant");
-      if (response.ok) {
-        const list = await response.json();
-        setVacantRooms(list);
-        if (list.length > 0) {
-          setRequestPropId(list[0].property_id);
-          const firstPropRooms = list.filter((r: any) => r.property_id === list[0].property_id);
-          if (firstPropRooms.length > 0) {
-            setRequestRoomNum(firstPropRooms[0].room_number);
+  React.useEffect(() => {
+    if (showRequestHouseModal) {
+      setRequestSuccess(null);
+      setRequestError(null);
+      setFetchingVacantRooms(true);
+      fetch("/api/rooms/vacant")
+        .then(res => {
+          if (res.ok) return res.json();
+          throw new Error("Unable to fetch vacant rooms.");
+        })
+        .then(list => {
+          setVacantRooms(list);
+          if (list.length > 0) {
+            setRequestPropId(list[0].property_id);
+            const firstPropRooms = list.filter((r: any) => r.property_id === list[0].property_id);
+            if (firstPropRooms.length > 0) {
+              setRequestRoomNum(firstPropRooms[0].room_number);
+            }
           }
-        }
-      } else {
-        throw new Error("Unable to fetch vacant rooms.");
-      }
-    } catch (err: any) {
-      setRequestError(err.message || "Failed to load currently vacant rooms.");
-    } finally {
-      setFetchingVacantRooms(false);
+        })
+        .catch(err => {
+          setRequestError(err.message || "Failed to load currently vacant rooms.");
+        })
+        .finally(() => {
+          setFetchingVacantRooms(false);
+        });
     }
+  }, [showRequestHouseModal]);
+
+  const handleOpenRequestHouse = () => {
+    window.location.hash = "#/request-house";
   };
 
   const handlePropChange = (propId: string) => {
@@ -323,16 +417,15 @@ export default function AuthScreens({ properties, onAdminLogin, onTenantLogin }:
           </div>
           
           <nav className="hidden md:flex space-x-6">
-            <span className="text-xs font-semibold text-slate-350 hover:text-white transition-all cursor-pointer font-mono uppercase tracking-wider">Properties</span>
-            <span className="text-xs font-semibold text-slate-350 hover:text-white transition-all cursor-pointer font-mono uppercase tracking-wider">About Us</span>
-            <span className="text-xs font-semibold text-slate-350 hover:text-white transition-all cursor-pointer font-mono uppercase tracking-wider">Contact</span>
+            <span onClick={() => { window.location.hash = "#/request-house"; }} className="text-xs font-semibold text-slate-350 hover:text-white transition-all cursor-pointer font-mono uppercase tracking-wider">Properties</span>
+            <span onClick={() => { window.location.hash = "#/request-house"; }} className="text-xs font-semibold text-slate-350 hover:text-white transition-all cursor-pointer font-mono uppercase tracking-wider">About Us</span>
+            <span onClick={() => { window.location.hash = "#/contact"; }} className="text-xs font-semibold text-slate-350 hover:text-emerald-400 transition-all cursor-pointer font-mono uppercase tracking-wider font-bold">Contact</span>
           </nav>
 
           {currentPage === "landing" ? (
             <button 
               onClick={() => {
-                setCurrentPage("login");
-                setError(null);
+                window.location.hash = "#/login";
               }}
               className="px-4 py-2 text-[11px] font-bold tracking-widest uppercase bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 active:scale-95 text-white rounded-xl transition-all shadow-md cursor-pointer flex items-center gap-1.5"
             >
@@ -342,8 +435,7 @@ export default function AuthScreens({ properties, onAdminLogin, onTenantLogin }:
           ) : (
             <button 
               onClick={() => {
-                setCurrentPage("landing");
-                setError(null);
+                window.location.hash = "#/";
               }}
               className="flex items-center gap-1.5 px-3.5 py-2 text-[11px] font-bold tracking-widest uppercase bg-white/10 hover:bg-white/15 text-white hover:text-white/85 border border-white/10 rounded-xl transition-all"
             >
@@ -357,7 +449,7 @@ export default function AuthScreens({ properties, onAdminLogin, onTenantLogin }:
       {/* LANDING PAGE STEP VIEW */}
       {currentPage === "landing" ? (
         <main className="flex-grow flex flex-col items-center justify-center text-center p-4 sm:p-8 lg:p-12 relative z-10 max-w-4xl w-full mx-auto space-y-8 animate-in fade-in duration-700">
-          <div className="space-y-4">
+          <div className="space-y-5">
             <div className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white/5 border border-white/10 rounded-full text-slate-200 font-mono text-[9px] font-bold uppercase tracking-widest backdrop-blur-sm shadow-inner">
               <Sparkles className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
               Verified Luxury Living
@@ -372,20 +464,25 @@ export default function AuthScreens({ properties, onAdminLogin, onTenantLogin }:
             </p>
           </div>
 
-          <div className="pt-4 flex flex-col sm:flex-row items-center justify-center gap-4 w-full max-w-lg mx-auto">
+          {/* Main Action Buttons: Request & Access Portals */}
+          <div className="pt-6 flex flex-col sm:flex-row items-center justify-center gap-4 w-full max-w-xl mx-auto">
             <button 
-              onClick={() => setShowTerms(true)}
-              className="w-full sm:w-1/2 px-6 py-3.5 bg-white/10 hover:bg-white/20 active:scale-[0.98] text-white border border-white/20 rounded-2xl backdrop-blur-md transition-all shadow-lg cursor-pointer flex items-center justify-center gap-2 hover:border-white/40 font-bold uppercase text-[10px] tracking-wider"
+              onClick={handleOpenRequestHouse}
+              className="w-full sm:w-1/2 px-6 py-4.5 bg-white/5 hover:bg-white/10 active:scale-[0.98] text-white border border-white/10 rounded-2xl backdrop-blur-md transition-all shadow-lg hover:border-emerald-500/30 cursor-pointer flex flex-col items-center justify-center gap-1 font-sans text-center group"
             >
-              <Info className="w-4 h-4 text-emerald-400" />
-              <span>Terms &amp; Conditions</span>
+              <span className="font-extrabold uppercase text-xs tracking-wider flex items-center gap-2 text-white">
+                Need a house? Get one 🏡
+              </span>
+              <span className="text-[10px] text-emerald-400 font-mono uppercase tracking-widest font-bold">Request a House</span>
             </button>
             <button 
-              onClick={() => setShowPrivacy(true)}
-              className="w-full sm:w-1/2 px-6 py-3.5 bg-white/10 hover:bg-white/20 active:scale-[0.98] text-white border border-white/20 rounded-2xl backdrop-blur-md transition-all shadow-lg cursor-pointer flex items-center justify-center gap-2 hover:border-white/40 font-bold uppercase text-[10px] tracking-wider"
+              onClick={() => { window.location.hash = "#/contact"; }}
+              className="w-full sm:w-1/2 px-6 py-4.5 bg-white/5 hover:bg-white/10 active:scale-[0.98] text-white border border-white/10 rounded-2xl backdrop-blur-md transition-all shadow-lg hover:border-emerald-500/30 cursor-pointer flex flex-col items-center justify-center gap-1 font-sans text-center group"
             >
-              <ShieldCheck className="w-4 h-4 text-emerald-400" />
-              <span>Privacy Policy</span>
+              <span className="font-bold uppercase text-xs tracking-wider flex items-center gap-2 text-white">
+                Contact Us 📩
+              </span>
+              <span className="text-[10px] text-emerald-400 font-mono uppercase tracking-widest font-bold">Get In Touch Instantly</span>
             </button>
           </div>
         </main>
@@ -606,9 +703,9 @@ export default function AuthScreens({ properties, onAdminLogin, onTenantLogin }:
             </p>
           </div>
           <div className="flex items-center gap-3 text-xs font-semibold uppercase tracking-wider font-mono text-slate-400">
-            <button onClick={() => setShowPrivacy(true)} className="hover:text-emerald-400 transition cursor-pointer">Privacy Policy</button>
+            <button onClick={() => { window.location.hash = "#/privacy"; }} className="hover:text-emerald-400 transition cursor-pointer">Privacy Policy</button>
             <span className="text-slate-700">•</span>
-            <button onClick={() => setShowTerms(true)} className="hover:text-emerald-450 transition cursor-pointer">Terms of Service</button>
+            <button onClick={() => { window.location.hash = "#/terms"; }} className="hover:text-emerald-450 transition cursor-pointer">Terms of Service</button>
           </div>
         </div>
       </footer>
@@ -623,7 +720,7 @@ export default function AuthScreens({ properties, onAdminLogin, onTenantLogin }:
                 <h3 className="text-sm font-bold text-white tracking-widest uppercase font-display">Apply / Request a Room</h3>
               </div>
               <button 
-                onClick={() => setShowRequestHouseModal(false)}
+                onClick={() => { window.location.hash = "#/"; }}
                 className="p-1 px-2.5 bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white rounded-lg text-[10px] font-bold uppercase transition-all cursor-pointer"
               >
                 Close
@@ -747,7 +844,7 @@ export default function AuthScreens({ properties, onAdminLogin, onTenantLogin }:
                 <div className="pt-2 flex justify-end gap-3 font-sans">
                   <button
                     type="button"
-                    onClick={() => setShowRequestHouseModal(false)}
+                    onClick={() => { window.location.hash = "#/"; }}
                     className="px-5 py-2.5 bg-slate-800 hover:bg-slate-755 text-slate-200 font-bold text-[10px] tracking-wider uppercase rounded-xl transition-all cursor-pointer"
                   >
                     Cancel
@@ -777,7 +874,7 @@ export default function AuthScreens({ properties, onAdminLogin, onTenantLogin }:
                 <h3 className="text-sm font-bold text-white tracking-widest uppercase font-display">Terms &amp; Conditions</h3>
               </div>
               <button 
-                onClick={() => setShowTerms(false)}
+                onClick={() => { window.location.hash = "#/"; }}
                 className="p-1 px-2.5 bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white rounded-lg text-[10px] font-bold uppercase transition-all cursor-pointer"
               >
                 Close
@@ -820,7 +917,7 @@ export default function AuthScreens({ properties, onAdminLogin, onTenantLogin }:
 
             <div className="pt-4 border-t border-slate-800 flex justify-end">
               <button 
-                onClick={() => setShowTerms(false)}
+                onClick={() => { window.location.hash = "#/"; }}
                 className="px-5 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-bold text-[10px] tracking-wider uppercase rounded-xl transition-all cursor-pointer shadow-md"
               >
                 I Accept
@@ -840,7 +937,7 @@ export default function AuthScreens({ properties, onAdminLogin, onTenantLogin }:
                 <h3 className="text-sm font-bold text-white tracking-widest uppercase font-display">Privacy Policy</h3>
               </div>
               <button 
-                onClick={() => setShowPrivacy(false)}
+                onClick={() => { window.location.hash = "#/"; }}
                 className="p-1 px-2.5 bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white rounded-lg text-[10px] font-bold uppercase transition-all cursor-pointer"
               >
                 Close
@@ -883,11 +980,148 @@ export default function AuthScreens({ properties, onAdminLogin, onTenantLogin }:
 
             <div className="pt-4 border-t border-slate-800 flex justify-end">
               <button 
-                onClick={() => setShowPrivacy(false)}
+                onClick={() => { window.location.hash = "#/"; }}
                 className="px-5 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-bold text-[10px] tracking-wider uppercase rounded-xl transition-all cursor-pointer shadow-md"
               >
                 Acknowledged
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* CONTACT INFO MODAL */}
+      {showContactModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-in fade-in duration-300">
+          <div className="w-full max-w-3xl bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 space-y-6 relative max-h-[90vh] overflow-y-auto shadow-2xl text-left">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-4">
+              <div className="flex items-center gap-2.5">
+                <Mail className="w-5 h-5 text-emerald-400" />
+                <h3 className="text-base font-extrabold text-white tracking-widest uppercase font-display">Get in Touch with Kireu Houses</h3>
+              </div>
+              <button 
+                onClick={() => { window.location.hash = "#/"; }}
+                className="p-1.5 px-3 bg-slate-800 hover:bg-slate-700 text-slate-350 hover:text-white rounded-xl text-[10px] font-extrabold uppercase transition-all cursor-pointer flex items-center gap-1.5 border border-white/5"
+              >
+                <X className="w-3 h-3 text-red-400" />
+                <span>Dismiss</span>
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2">
+              {/* BLOCK 1: THE PREMIER OWNER - ONEWEE OF KIREU HEALTHY RESIDENCES */}
+              <div className="bg-gradient-to-br from-slate-950 to-slate-900 border border-emerald-500/10 rounded-2xl p-5 sm:p-6 flex flex-col justify-between space-y-4">
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2 justify-between">
+                    <span className="px-2 py-0.5 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 font-mono text-[9px] uppercase tracking-wider font-extrabold rounded">
+                      Executive Estate Owner
+                    </span>
+                    <Building className="w-4 h-4 text-emerald-400" />
+                  </div>
+                  <div>
+                    <h4 className="text-lg font-black text-white font-display uppercase tracking-wide">
+                      {contacts?.owner_contact?.name || "Onewee of Kireu"}
+                    </h4>
+                    <p className="text-[10px] text-slate-400 font-mono uppercase tracking-widest mt-0.5">
+                      Verified Estate Director
+                    </p>
+                  </div>
+                  <p className="text-xs text-slate-300 leading-relaxed font-sans border-t border-white/5 pt-3">
+                    {contacts?.owner_contact?.background || "Onewee of Kireu is the premier owner of Kireu modern verified assets, ensuring safety, reliability, and modern luxury standards."}
+                  </p>
+                </div>
+
+                <div className="space-y-2 border-t border-white/5 pt-4">
+                  <div className="flex items-center justify-between text-xs font-mono">
+                    <span className="text-slate-500 uppercase tracking-widest text-[9px]">Mobile Direct:</span>
+                    <a href={`tel:${contacts?.owner_contact?.phone || "254711222333"}`} className="text-emerald-400 font-bold hover:underline">
+                      +{contacts?.owner_contact?.phone || "254711222333"}
+                    </a>
+                  </div>
+                  <div className="flex items-center justify-between text-xs font-mono">
+                    <span className="text-slate-500 uppercase tracking-widest text-[9px]">Email Desk:</span>
+                    <a href={`mailto:${contacts?.owner_contact?.email || "onewee@kireu.com"}`} className="text-slate-350 font-bold hover:underline font-sans truncate block max-w-[200px]">
+                      {contacts?.owner_contact?.email || "onewee@kireu.com"}
+                    </a>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2 pt-2">
+                    <a 
+                      href={`tel:${contacts?.owner_contact?.phone || "254711222333"}`}
+                      className="py-2.5 bg-slate-800 hover:bg-slate-700 text-center text-white font-extrabold uppercase text-[9px] tracking-wider rounded-xl border border-white/10 transition-all cursor-pointer block"
+                    >
+                      Call Executive
+                    </a>
+                    <a 
+                      href={`https://wa.me/${(contacts?.owner_contact?.phone || "254711222333").replace(/[^0-9]/g, "")}`}
+                      target="_blank"
+                      referrerPolicy="no-referrer"
+                      className="py-2.5 bg-emerald-500 hover:bg-emerald-600 text-center text-slate-950 font-extrabold uppercase text-[9px] tracking-wider rounded-xl transition-all cursor-pointer block"
+                    >
+                      WhatsApp Chat
+                    </a>
+                  </div>
+                </div>
+              </div>
+
+              {/* BLOCK 2: THE LEAD SYSTEMS ARCHITECT & SCIENTIST - COLLINS KOSGEI */}
+              <div className="bg-gradient-to-br from-slate-950 to-slate-900 border border-blue-500/10 rounded-2xl p-5 sm:p-6 flex flex-col justify-between space-y-4">
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2 justify-between">
+                    <span className="px-2 py-0.5 bg-blue-500/10 border border-blue-500/20 text-blue-400 font-mono text-[9px] uppercase tracking-wider font-extrabold rounded">
+                      IT Scientist &amp; Web Developer
+                    </span>
+                    <Code className="w-4 h-4 text-blue-400" />
+                  </div>
+                  <div>
+                    <h4 className="text-lg font-black text-white font-display uppercase tracking-wide">
+                      {contacts?.developer_contact?.name || "Collins Kosgei"}
+                    </h4>
+                    <p className="text-[10px] text-slate-400 font-mono uppercase tracking-widest mt-0.5">
+                      Systems Architect
+                    </p>
+                  </div>
+                  <p className="text-xs text-slate-300 leading-relaxed font-sans border-t border-white/5 pt-3">
+                    {contacts?.developer_contact?.background || "Collins is a verified information technology professional and a scientist, a full web developer with experience. For a good website call or WhatsApp Collins."}
+                  </p>
+                </div>
+
+                <div className="space-y-2 border-t border-white/5 pt-4">
+                  <div className="flex items-center justify-between text-xs font-mono">
+                    <span className="text-slate-500 uppercase tracking-widest text-[9px]">Mobile Direct:</span>
+                    <a href={`tel:${contacts?.developer_contact?.phone || "254712345678"}`} className="text-blue-400 font-bold hover:underline font-mono">
+                      +{contacts?.developer_contact?.phone || "254712345678"}
+                    </a>
+                  </div>
+                  <div className="flex items-center justify-between text-xs font-mono">
+                    <span className="text-slate-500 uppercase tracking-widest text-[9px]">Email Desk:</span>
+                    <a href={`mailto:${contacts?.developer_contact?.email || "collinskosgei32@gmail.com"}`} className="text-slate-350 font-bold hover:underline font-sans truncate block max-w-[200px]">
+                      {contacts?.developer_contact?.email || "collinskosgei32@gmail.com"}
+                    </a>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2 pt-2">
+                    <a 
+                      href={`tel:${contacts?.developer_contact?.phone || "254712345678"}`}
+                      className="py-2.5 bg-slate-800 hover:bg-slate-700 text-center text-white font-extrabold uppercase text-[9px] tracking-wider rounded-xl border border-white/10 transition-all cursor-pointer block"
+                    >
+                      Call Developer
+                    </a>
+                    <a 
+                      href={`https://wa.me/${(contacts?.developer_contact?.phone || "254712345678").replace(/[^0-9]/g, "")}`}
+                      target="_blank"
+                      referrerPolicy="no-referrer"
+                      className="py-2.5 bg-blue-500 hover:bg-blue-600 text-center text-slate-950 font-extrabold uppercase text-[9px] tracking-wider rounded-xl transition-all cursor-pointer block"
+                    >
+                      WhatsApp Chat
+                    </a>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="pt-4 border-t border-slate-800 text-[10px] text-slate-500 font-sans tracking-wide leading-relaxed text-center">
+              Need custom modifications, features, or fully hosted dynamic listings? Get in touch directly with our support lines above for high premium speed execution.
             </div>
           </div>
         </div>
