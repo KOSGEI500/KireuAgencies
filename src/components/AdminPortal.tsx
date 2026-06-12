@@ -268,6 +268,7 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
   const [localBackupData, setLocalBackupData] = useState<any | null>(null);
   const [showRestoreBanner, setShowRestoreBanner] = useState(false);
   const [isRestoringBackup, setIsRestoringBackup] = useState(false);
+  const [isAutoRestoring, setIsAutoRestoring] = useState(false);
 
   // Perform automatic browser-side database backup
   const autoBackupDatabase = async () => {
@@ -282,12 +283,25 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
           ) || fullDb.properties.length !== 3;
 
           if (hasCustomChanges) {
-            const backupPayload = {
-              timestamp: Date.now(),
-              db: fullDb
-            };
-            localStorage.setItem("kireu_houses_auto_backup", JSON.stringify(backupPayload));
-            setLocalBackupData(backupPayload);
+            // Only overwrite if the new database is non-empty, OR if the previous backup is also empty.
+            // This prevents replacing a healthy browser-side backup with an empty database when the server performs a cold-reboot reset/wipe.
+            const rawBackup = localStorage.getItem("kireu_houses_auto_backup");
+            let prevBackupCount = 0;
+            if (rawBackup) {
+              try {
+                const parsed = JSON.parse(rawBackup);
+                prevBackupCount = parsed?.db?.properties?.length || 0;
+              } catch (e) {}
+            }
+
+            if (fullDb.properties.length > 0 || prevBackupCount === 0) {
+              const backupPayload = {
+                timestamp: Date.now(),
+                db: fullDb
+              };
+              localStorage.setItem("kireu_houses_auto_backup", JSON.stringify(backupPayload));
+              setLocalBackupData(backupPayload);
+            }
           }
         }
       }
@@ -331,6 +345,34 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
         const parsed = JSON.parse(raw);
         if (parsed && parsed.db && parsed.db.properties) {
           setLocalBackupData(parsed);
+
+          // P2P Self-Healing Action: If the active server-side database has completely wiped/reset to 0 properties,
+          // but the user's browser-local backup has valid, existing properties, silently restore the data immediately!
+          // This makes the application completely Bulletproof and Immune to any cold starts / stateless environment resets.
+          if (properties.length === 0 && parsed.db.properties.length > 0 && !isAutoRestoring) {
+            console.log("[PEER-TO-PEER AUTO-HEAL] Server is empty but browser holds active records! Silently synchronizing state down to container.");
+            setIsAutoRestoring(true);
+            fetch("/api/db/import", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ dbData: parsed.db })
+            }).then(res => {
+              if (res.ok) {
+                console.log("[PEER-TO-PEER AUTO-HEAL] Database server-side state restored and sync completed cleanly.");
+                onRefreshProperties();
+                setTimeout(() => {
+                  fetchPropertySpecifics();
+                  setIsAutoRestoring(false);
+                }, 800);
+              } else {
+                setIsAutoRestoring(false);
+              }
+            }).catch(e => {
+              console.error("[PEER-TO-PEER AUTO-HEAL] Failed background restoration:", e);
+              setIsAutoRestoring(false);
+            });
+            return;
+          }
           
           // Verify if active server database matches the default seed state
           const isDefaultSeed = properties.length === 3 && 
@@ -357,7 +399,7 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
     } catch (e) {
       console.warn("Failed to check auto backup discrepancy", e);
     }
-  }, [properties]);
+  }, [properties, isAutoRestoring]);
 
   const handleParseAndApplyConfig = () => {
     if (!rawFirebaseConfigText.trim()) {
