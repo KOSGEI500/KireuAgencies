@@ -85,6 +85,7 @@ export default function AuthScreens({ properties, onAdminLogin, onTenantLogin }:
 
     window.addEventListener("hashchange", handleHashChange);
     handleHashChange(); // Run on mount
+    fetchContacts(); // Ensure live database contact configurations are retrieved and displayed on the landing page immediately
 
     return () => {
       window.removeEventListener("hashchange", handleHashChange);
@@ -395,9 +396,7 @@ export default function AuthScreens({ properties, onAdminLogin, onTenantLogin }:
   };
 
   return (
-    <div className={`bg-transparent text-slate-100 flex flex-col justify-between transition-all duration-300 relative font-sans ${
-      currentPage === "landing" ? "h-screen max-h-screen overflow-hidden" : "min-h-screen overflow-x-hidden"
-    }`}>
+    <div className="bg-transparent text-slate-100 flex flex-col justify-between transition-all duration-300 relative font-sans min-h-screen overflow-x-hidden">
       
       {/* NAVBAR HEADER BAR */}
       <header className="w-full border-b border-white/5 bg-slate-900/60 sticky top-0 z-50 backdrop-blur-md transition-all duration-300">

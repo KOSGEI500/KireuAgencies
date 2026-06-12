@@ -51,6 +51,23 @@ export default function App() {
     };
   }, []);
 
+  useEffect(() => {
+    try {
+      const root = document.documentElement;
+      if (fontSize === "sm") {
+        root.style.fontSize = "14px";
+      } else if (fontSize === "normal") {
+        root.style.fontSize = "16px";
+      } else if (fontSize === "lg") {
+        root.style.fontSize = "18px";
+      } else if (fontSize === "xl") {
+        root.style.fontSize = "21px";
+      }
+    } catch (err) {
+      console.error("Failed to apply dynamic root font size scale:", err);
+    }
+  }, [fontSize]);
+
   const fetchProperties = async (retryCount = 0) => {
     let succeeded = false;
     try {
@@ -575,6 +592,21 @@ export default function App() {
           </div>
         </div>
       )}
+
+      {/* Persistent Global Floating Accessibility Control Panel */}
+      <div className="fixed bottom-6 right-6 z-40 flex flex-col gap-2">
+        <button
+          onClick={() => setSettingsOpen(true)}
+          className="p-3.5 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white rounded-full shadow-2xl border border-emerald-400/20 active:scale-95 transition-all flex items-center justify-center cursor-pointer group"
+          title="Personalize Accessibility & Text Size"
+          aria-label="Personalize Accessibility & Text Size"
+        >
+          <Sliders className="w-5 h-5 group-hover:rotate-45 transition-transform duration-300 text-white shrink-0" />
+          <span className="max-w-0 overflow-hidden group-hover:max-w-xs transition-all duration-300 ease-out font-mono text-[9px] uppercase tracking-widest pl-0 group-hover:pl-2 font-bold select-none whitespace-nowrap text-white">
+            Personalize Site
+          </span>
+        </button>
+      </div>
 
     </div>
   );

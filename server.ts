@@ -96,6 +96,7 @@ interface DBModel {
   room_requests?: RoomRequest[];
   developer_contact?: ContactInfo;
   owner_contact?: ContactInfo;
+  last_ready_timestamp?: string;
 }
 
 // Initial seed data representing real plots/houses across Kenya
@@ -223,7 +224,8 @@ const INITIAL_DB: DBModel = {
     phone: "254711222333",
     email: "onewee@kireu.com",
     background: "Onewee of Kireu is the premier owner of Kireu modern verified assets, ensuring safety, reliability, and modern luxury standards."
-  }
+  },
+  last_ready_timestamp: "2026-06-11T00:00:00.000Z"
 };
 
 // Local in-memory cache of the database to guarantee synchronous readDB() performance
@@ -250,50 +252,106 @@ function cleanseUndefined(obj: any): any {
   return obj;
 }
 
+function isDbModified(db: DBModel): boolean {
+  if (!db) return false;
+  const hasPropDiff = JSON.stringify(db.properties || []) !== JSON.stringify(INITIAL_DB.properties || []);
+  const hasRoomDiff = JSON.stringify(db.rooms || []) !== JSON.stringify(INITIAL_DB.rooms || []);
+  const hasTenantDiff = JSON.stringify(db.tenants || []) !== JSON.stringify(INITIAL_DB.tenants || []);
+  const hasPayDiff = JSON.stringify(db.payments || []) !== JSON.stringify(INITIAL_DB.payments || []);
+  const hasMaintDiff = JSON.stringify(db.maintenance || []) !== JSON.stringify(INITIAL_DB.maintenance || []);
+  const hasCaretakerDiff = JSON.stringify(db.caretakers || []) !== JSON.stringify(INITIAL_DB.caretakers || []);
+  const hasRoomReqDiff = JSON.stringify(db.room_requests || []) !== JSON.stringify(INITIAL_DB.room_requests || []);
+  const hasSmsDiff = JSON.stringify(db.sms_logs || []) !== JSON.stringify(INITIAL_DB.sms_logs || []);
+  const hasDevDiff = JSON.stringify(db.developer_contact || null) !== JSON.stringify(INITIAL_DB.developer_contact || null);
+  const hasOwnerDiff = JSON.stringify(db.owner_contact || null) !== JSON.stringify(INITIAL_DB.owner_contact || null);
+  
+  return hasPropDiff || hasRoomDiff || hasTenantDiff || hasPayDiff || hasMaintDiff || hasCaretakerDiff || hasRoomReqDiff || hasSmsDiff || hasDevDiff || hasOwnerDiff;
+}
+
 async function syncFromFirestore(): Promise<DBModel> {
+  const localDb = readDB(); // Always read local disk database first to capture any offline/workspace updates
   const client = await getFirestoreClient();
+  
   if (!client) {
     console.warn("Firestore not initialized, falling back to local memory database.");
-    return readDB();
+    cachedDb = localDb;
+    return localDb;
   }
+  
   try {
     const docRef = client.collection("app_state").doc("main");
     const docSnap = await docRef.get();
+    
+    let dbToUse: DBModel = localDb;
+    
     if (docSnap.exists) {
-      console.log("Loading persistent estate database from Google Cloud Firestore...");
-      const data = docSnap.data() as DBModel;
+      console.log("Persistent estate database found in Google Cloud Firestore.");
+      const firestoreDb = docSnap.data() as DBModel;
       
-      // Merge with default structures to safeguard against missing arrays on old schema runs
-      if (!data.properties) data.properties = [];
-      if (!data.rooms) data.rooms = [];
-      if (!data.tenants) data.tenants = [];
-      if (!data.payments) data.payments = [];
-      if (!data.maintenance) data.maintenance = [];
-      if (!data.caretakers) data.caretakers = [];
-      if (!data.sms_logs) data.sms_logs = [];
-      if (!data.room_requests) data.room_requests = [];
+      // Auto-initialize missing collections to safeguard older schemas
+      if (!firestoreDb.properties) firestoreDb.properties = [];
+      if (!firestoreDb.rooms) firestoreDb.rooms = [];
+      if (!firestoreDb.tenants) firestoreDb.tenants = [];
+      if (!firestoreDb.payments) firestoreDb.payments = [];
+      if (!firestoreDb.maintenance) firestoreDb.maintenance = [];
+      if (!firestoreDb.caretakers) firestoreDb.caretakers = [];
+      if (!firestoreDb.sms_logs) firestoreDb.sms_logs = [];
+      if (!firestoreDb.room_requests) firestoreDb.room_requests = [];
+      if (!firestoreDb.developer_contact) firestoreDb.developer_contact = { ...INITIAL_DB.developer_contact };
+      if (!firestoreDb.owner_contact) firestoreDb.owner_contact = { ...INITIAL_DB.owner_contact };
       
-      cachedDb = data;
-      // Mirror the persistent state onto local container disk for performance backup
-      try {
-        fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2));
-      } catch (e) {}
+      const localTime = new Date(localDb.last_ready_timestamp || "2026-06-11T00:00:00.000Z").getTime();
+      const fireTime = new Date(firestoreDb.last_ready_timestamp || "2026-06-11T00:00:00.000Z").getTime();
       
-      return data;
+      // Check if either database local or firestore has user customizations relative to defaults
+      const isLocalModified = isDbModified(localDb);
+      const isFireModified = isDbModified(firestoreDb);
+      
+      console.log(`[STATE SYNC CHECK] isLocalModified=${isLocalModified}, isFireModified=${isFireModified}, localTime=${localTime}, fireTime=${fireTime}`);
+      
+      if (isLocalModified && !isFireModified) {
+        console.log("Local workspace database has user customizations, but Firestore does not. Synchronizing local state up to Firestore...");
+        dbToUse = localDb;
+        syncToFirestore(dbToUse).catch((err) => {
+          console.error("Failed to back-sync local workspace modifications to Firestore on startup:", err);
+        });
+      } else if (isFireModified && !isLocalModified) {
+        console.log("Firestore database has user customizations, but local disk does not. Restoring Firestore state down to disk...");
+        dbToUse = firestoreDb;
+      } else if (localTime > fireTime) {
+        console.log("Local workspace database has strictly newer timestamp modifications. Synchronizing local state up to Firestore...");
+        dbToUse = localDb;
+        syncToFirestore(dbToUse).catch((err) => {
+          console.error("Failed to back-sync local workspace modifications to Firestore on startup:", err);
+        });
+      } else {
+        console.log("Firestore database has newer, equal, or master modifications. Syncing Firestore state down to disk...");
+        dbToUse = firestoreDb;
+      }
     } else {
-      console.log("No existing database document found in Cloud Firestore. Seeding INITIAL_DB...");
-      const seeded = cleanseUndefined(INITIAL_DB);
-      await docRef.set(seeded);
-      cachedDb = JSON.parse(JSON.stringify(INITIAL_DB));
-      return cachedDb!;
+      console.log("No existing database document found in Cloud Firestore. Seeding local dataset up to Firestore...");
+      dbToUse = localDb;
+      await syncToFirestore(dbToUse);
     }
+    
+    // Ensure contacts are correctly seeded
+    if (!dbToUse.developer_contact) dbToUse.developer_contact = { ...INITIAL_DB.developer_contact };
+    if (!dbToUse.owner_contact) dbToUse.owner_contact = { ...INITIAL_DB.owner_contact };
+    
+    cachedDb = dbToUse;
+    try {
+      fs.writeFileSync(DB_FILE, JSON.stringify(dbToUse, null, 2));
+    } catch (e) {}
+    
+    return dbToUse;
   } catch (error: any) {
     if (error && error.message && error.message.includes("PERMISSION_DENIED")) {
-      console.warn("Durable state restoration bypassed: Server container credentials do not have direct client-node read permissions on custom Firestore keys.");
+      console.warn("Durable state restoration bypassed: Service credentials lack reading rights. Bypassing Firestore.");
     } else {
-      console.error("Failed to fetch database document from Firestore, using disk cache...", error);
+      console.error("Failed to fetch database document from Firestore, using local filesystem cache...", error);
     }
-    return readDB();
+    cachedDb = localDb;
+    return localDb;
   }
 }
 
@@ -304,10 +362,10 @@ async function syncToFirestore(data: DBModel) {
     const docRef = client.collection("app_state").doc("main");
     const cleanedData = cleanseUndefined(data);
     await docRef.set(cleanedData);
-    console.log("Durable state backup written to Cloud Firestore successfully.");
+    console.log("Durable state database backup written to Cloud Firestore successfully.");
   } catch (error: any) {
     if (error && error.message && error.message.includes("PERMISSION_DENIED")) {
-      console.warn("Durable backup sync bypassed: Server container credentials do not have direct client-node write permissions on custom Firestore keys.");
+      console.warn("Durable backup sync bypassed: Service credentials lack direct writing permissions.");
     } else {
       console.error("Failed to commit database backup to Firestore:", error);
     }
@@ -321,9 +379,11 @@ function readDB(): DBModel {
   }
   try {
     if (!fs.existsSync(DB_FILE)) {
-      fs.writeFileSync(DB_FILE, JSON.stringify(INITIAL_DB, null, 2));
-      cachedDb = JSON.parse(JSON.stringify(INITIAL_DB));
-      return INITIAL_DB;
+      const initialCopy = JSON.parse(JSON.stringify(INITIAL_DB));
+      initialCopy.last_ready_timestamp = "2026-06-11T00:00:00.000Z";
+      fs.writeFileSync(DB_FILE, JSON.stringify(initialCopy, null, 2));
+      cachedDb = initialCopy;
+      return initialCopy;
     }
     const raw = fs.readFileSync(DB_FILE, "utf-8");
     const parsed = JSON.parse(raw) as DBModel;
@@ -331,31 +391,27 @@ function readDB(): DBModel {
     if (!parsed.sms_logs) parsed.sms_logs = [];
     if (!parsed.room_requests) parsed.room_requests = [];
     if (!parsed.developer_contact) {
-      parsed.developer_contact = {
-        name: "Collins Kosgei",
-        phone: "254712345678",
-        email: "collinskosgei32@gmail.com",
-        background: "Collins is a verified information technology professional and a scientist, a full web developer with experience. For a good website call or WhatsApp Collins."
-      };
+      parsed.developer_contact = { ...INITIAL_DB.developer_contact };
     }
     if (!parsed.owner_contact) {
-      parsed.owner_contact = {
-        name: "Onewee",
-        phone: "254711222333",
-        email: "onewee@kireu.com",
-        background: "Onewee of Kireu is the premier owner of Kireu modern verified assets, ensuring safety, reliability, and modern luxury standards."
-      };
+      parsed.owner_contact = { ...INITIAL_DB.owner_contact };
+    }
+    if (!parsed.last_ready_timestamp) {
+      parsed.last_ready_timestamp = "2026-06-11T00:00:00.000Z";
     }
     cachedDb = parsed;
     return parsed;
   } catch (error) {
     console.error("Disk DB reading error, falling back to initial memory definition", error);
-    cachedDb = { ...INITIAL_DB, caretakers: [], sms_logs: [], room_requests: [] };
-    return cachedDb;
+    const fallback = { ...INITIAL_DB, caretakers: [], sms_logs: [], room_requests: [], last_ready_timestamp: "2026-06-11T00:00:00.000Z" };
+    cachedDb = fallback;
+    return fallback;
   }
 }
 
 function writeDB(data: DBModel) {
+  // Update modifications timestamp
+  data.last_ready_timestamp = new Date().toISOString();
   cachedDb = data;
   try {
     fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2));

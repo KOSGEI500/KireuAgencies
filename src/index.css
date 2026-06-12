@@ -8,15 +8,14 @@
 }
 
 html, body {
-  overscroll-behavior: none;
-  overscroll-behavior-y: none;
+  overscroll-behavior: auto;
+  overscroll-behavior-y: auto;
 }
 
 body {
   font-family: var(--font-sans);
   background-color: #020617;
   color: #F8FAFC;
-  touch-action: manipulation;
 }
 
 /* Clean Utility Custom Theme Support */
