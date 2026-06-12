@@ -1092,7 +1092,14 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
       setNewRoomNum("");
       setNewRoomRent("");
       setNewRoomUtil("");
-      fetchPropertySpecifics();
+      
+      // Auto-switch selected plot to the target plot of the room to instantly display the newly added rooms!
+      if (!isCaretaker && newRoomPropId && newRoomPropId !== selectedPropertyId) {
+        setSelectedPropertyId(newRoomPropId);
+      } else {
+        fetchPropertySpecifics();
+      }
+
       onRefreshProperties();
       alert(data.message || "Apartment unit registered as Vacant.");
     } catch (err: any) {
@@ -1171,7 +1178,14 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
       setTenantSuccess(`Tenant "${newTenantName}" registered inside Room ${newTenantRoom}! Security credentials auto-configured: Username (Phone Number): ${cleanPhone}, Access PIN: Room "${newTenantRoom}" or name PIN "${newTenantName.trim().split(" ")[0]}".`);
       setNewTenantName("");
       setNewTenantPhone("");
-      fetchPropertySpecifics();
+      
+      // Auto-switch selected plot to the target plot of the tenant to instantly display the newly added resident!
+      if (!isCaretaker && newTenantPropId && newTenantPropId !== selectedPropertyId) {
+        setSelectedPropertyId(newTenantPropId);
+      } else {
+        fetchPropertySpecifics();
+      }
+
       onRefreshProperties();
     } catch (err: any) {
       setTenantError(err.message || "Error register tenant.");

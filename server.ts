@@ -1011,7 +1011,16 @@ app.post("/api/rooms", (req, res) => {
     if (/[,\n\r;]/.test(room_number)) {
       roomNumbers = room_number.split(/[,\n\r;]+/).map(r => r.trim()).filter(Boolean);
     } else {
-      roomNumbers = room_number.split(/\s+/).map(r => r.trim()).filter(Boolean);
+      const trimmed = room_number.trim();
+      const parts = trimmed.split(/\s+/).map(r => r.trim()).filter(Boolean);
+      // Check if it looks like multiple separate short alphanumeric codes (e.g., "101 102 103")
+      // If parts are short alphanumeric/numeric codes, treat as multiple rooms. Otherwise, keep as a single room string (e.g. "Room A").
+      const looksLikeMultipleNumbers = parts.length > 1 && parts.every(p => /^\d+\w*$/.test(p) || /^\w\d+$/.test(p));
+      if (looksLikeMultipleNumbers) {
+        roomNumbers = parts;
+      } else {
+        roomNumbers = [trimmed];
+      }
     }
   } else if (room_number) {
     roomNumbers = [String(room_number).trim()];
