@@ -222,9 +222,23 @@ async function syncFromFirestore(): Promise<DBModel> {
       const localTime = new Date(localDb.last_ready_timestamp || "2026-06-11T00:00:00.000Z").getTime();
       const fireTime = new Date(firestoreDb.last_ready_timestamp || "2026-06-11T00:00:00.000Z").getTime();
       
-      console.log(`[STATE SYNC CHECK] localTime=${localTime}, fireTime=${fireTime}, dbInitialized=${dbInitialized}`);
+      const isVercelEnvironment = !!(process.env.VERCEL || process.env.NOW_RENDERING || process.env.AWS_LAMBDA_FUNCTION_NAME);
+      const isFireModified = isDbModified(firestoreDb);
       
-      if (localTime > fireTime) {
+      console.log(`[STATE SYNC CHECK] localTime=${localTime}, fireTime=${fireTime}, dbInitialized=${dbInitialized}, isVercel=${isVercelEnvironment}, isFireModified=${isFireModified}`);
+      
+      if (isVercelEnvironment) {
+        if (isFireModified) {
+          console.log("Vercel serverless environment detected with active database. Forcing Cloud Firestore as single source of truth.");
+          dbToUse = firestoreDb;
+        } else {
+          console.log("Vercel serverless environment detected but Firestore is unseeded. Falling back to packaged database baseline.");
+          dbToUse = localDb;
+          syncToFirestore(dbToUse).catch((err) => {
+            console.error("Failed to seed empty Vercel database onto Firestore:", err);
+          });
+        }
+      } else if (localTime > fireTime) {
         console.log("Local workspace database has strictly newer timestamp modifications. Keeping local state and backing up to Firestore...");
         dbToUse = localDb;
         syncToFirestore(dbToUse).catch((err) => {
@@ -352,6 +366,17 @@ function readDB(): DBModel {
   }
 }
 
+// Global set to track active background Firestore write operations
+const activeSyncPromises: Set<Promise<any>> = new Set();
+
+function trackPromise<T>(p: Promise<T>): Promise<T> {
+  activeSyncPromises.add(p);
+  p.finally(() => {
+    activeSyncPromises.delete(p);
+  });
+  return p;
+}
+
 function writeDB(data: DBModel) {
   // Update modifications timestamp
   data.last_ready_timestamp = new Date().toISOString();
@@ -361,10 +386,11 @@ function writeDB(data: DBModel) {
   } catch (error) {
     console.error("Local disk storage writing error", error);
   }
-  // Synchronize asynchronously with Google Cloud Firestore
-  syncToFirestore(data).catch((err) => {
+  // Synchronize asynchronously with Google Cloud Firestore and track its completion status
+  const syncPromise = syncToFirestore(data).catch((err) => {
     console.error("Asynchronous FireStore background synchronization failed:", err);
   });
+  trackPromise(syncPromise);
 }
 
 // BILLING ENGINE: Computes current billing cycle dynamically
@@ -456,6 +482,37 @@ function getBillingStatusForTenant(tenant: Tenant, db: DBModel, targetDate = new
 
 // MIDDLEWARES
 app.use(express.json({ limit: "15mb" }));
+
+// Express response interceptor to block returning HTTP responses until active Firestore writes are finished.
+// This is critical in serverless hosting solutions (like Vercel functions, Lambdas) where processes are immediately sleeping after response sends.
+app.use((req: any, res: any, next: any) => {
+  const originalSend = res.send;
+  const originalJson = res.json;
+
+  const awaitWritesAndRespond = async (fn: Function, ...args: any[]) => {
+    if (activeSyncPromises.size > 0) {
+      console.log(`[Vercel Serverless Protection] Delaying response for ${activeSyncPromises.size} active Firestore operations...`);
+      try {
+        await Promise.all(Array.from(activeSyncPromises));
+      } catch (err) {
+        console.error("[Vercel Serverless Protection] Err on active writes await:", err);
+      }
+    }
+    return fn.apply(res, args);
+  };
+
+  res.send = function (...args: any[]) {
+    awaitWritesAndRespond(originalSend, ...args);
+    return res;
+  };
+
+  res.json = function (...args: any[]) {
+    awaitWritesAndRespond(originalJson, ...args);
+    return res;
+  };
+
+  next();
+});
 
 // Middleware to ensure database is fully synchronized before serving API routes
 const ensureDbReady = async (req: any, res: any, next: any) => {
@@ -577,7 +634,9 @@ async function saveBackupPoint(label: string, type: "Manual" | "Automatic", cust
   if (client) {
     try {
       const cleanedBackup = cleanseUndefined(newBackup);
-      await client.collection("database_backups").doc(backup_id).set(cleanedBackup);
+      const writePromise = client.collection("database_backups").doc(backup_id).set(cleanedBackup);
+      trackPromise(writePromise);
+      await writePromise;
       console.log(`Disaster Backup Point [${label}] committed successfully to Cloud Firestore!`);
     } catch (error: any) {
       if (error && error.message && error.message.includes("PERMISSION_DENIED")) {
