@@ -49,14 +49,32 @@ function buildFirestoreOptions(config: any): any {
 
   if (process.env.FIREBASE_SERVICE_ACCOUNT_JSON) {
     try {
-      options.credentials = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON);
+      let jsonStr = process.env.FIREBASE_SERVICE_ACCOUNT_JSON.trim();
+      // Auto-detect base64 encoding
+      if (!jsonStr.startsWith("{")) {
+        try {
+          jsonStr = Buffer.from(jsonStr, "base64").toString("utf-8").trim();
+        } catch (e) {
+          console.error("Failed to decode base64 encoded FIREBASE_SERVICE_ACCOUNT_JSON:", e);
+        }
+      }
+      options.credentials = JSON.parse(jsonStr);
     } catch (err) {
       console.error("Failed to parse FIREBASE_SERVICE_ACCOUNT_JSON:", err);
     }
   } else if (process.env.FIREBASE_PRIVATE_KEY && process.env.FIREBASE_CLIENT_EMAIL) {
+    let pKey = process.env.FIREBASE_PRIVATE_KEY.trim();
+    // Auto-detect base64 private key encoding if there are no typical PEM headers
+    if (!pKey.includes("-") && !pKey.includes(" ")) {
+      try {
+        pKey = Buffer.from(pKey, "base64").toString("utf-8").trim();
+      } catch (e) {
+        console.error("Failed to base64-decode private key:", e);
+      }
+    }
     options.credentials = {
-      private_key: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, "\n"),
-      client_email: process.env.FIREBASE_CLIENT_EMAIL
+      private_key: pKey.replace(/\\n/g, "\n"),
+      client_email: process.env.FIREBASE_CLIENT_EMAIL.trim()
     };
   }
   
@@ -196,8 +214,8 @@ async function syncFromFirestore(): Promise<DBModel> {
       if (!firestoreDb.developer_contact) firestoreDb.developer_contact = { ...INITIAL_DB.developer_contact };
       if (!firestoreDb.owner_contact) firestoreDb.owner_contact = { ...INITIAL_DB.owner_contact };
 
-      // Detect if the persistent database contains old seed data and purge it for a clean slate
-      const containsOldSeedData = firestoreDb.properties && firestoreDb.properties.some(p => p.property_id === "prop_1" || p.property_name === "Milimani Court");
+      // Detect if the persistent database contains old seed data and purge it for a clean slate (safely targeting unique prop_1 mock ID)
+      const containsOldSeedData = firestoreDb.properties && firestoreDb.properties.some(p => p.property_id === "prop_1");
       if (containsOldSeedData) {
         console.log("Old test database detected in Cloud Firestore. Purging all test data to start fresh on a clean slate...");
         firestoreDb.properties = [];
@@ -227,19 +245,14 @@ async function syncFromFirestore(): Promise<DBModel> {
       
       console.log(`[STATE SYNC CHECK] localTime=${localTime}, fireTime=${fireTime}, dbInitialized=${dbInitialized}, isVercel=${isVercelEnvironment}, isFireModified=${isFireModified}`);
       
-      if (isVercelEnvironment) {
-        if (isFireModified) {
-          console.log("Vercel serverless environment detected with active database. Forcing Cloud Firestore as single source of truth.");
-          dbToUse = firestoreDb;
-        } else {
-          console.log("Vercel serverless environment detected but Firestore is unseeded. Falling back to packaged database baseline.");
-          dbToUse = localDb;
-          syncToFirestore(dbToUse).catch((err) => {
-            console.error("Failed to seed empty Vercel database onto Firestore:", err);
-          });
-        }
+      if (isVercelEnvironment && !isFireModified) {
+        console.log("Vercel serverless environment detected but Firestore is unseeded. Seeding empty Firestore database with local bundled baseline.");
+        dbToUse = localDb;
+        syncToFirestore(dbToUse).catch((err) => {
+          console.error("Failed to seed empty Vercel database onto Firestore:", err);
+        });
       } else if (localTime > fireTime) {
-        console.log("Local workspace database has strictly newer timestamp modifications. Keeping local state and backing up to Firestore...");
+        console.log("Local database has strictly newer timestamp modifications. Keeping local state and backing up to Firestore...");
         dbToUse = localDb;
         syncToFirestore(dbToUse).catch((err) => {
           console.error("Failed to back-sync local modifications to Firestore during TTL check:", err);
@@ -315,9 +328,27 @@ function readDB(): DBModel {
   }
   try {
     if (!fs.existsSync(DB_FILE)) {
-      const initialCopy = JSON.parse(JSON.stringify(INITIAL_DB));
-      initialCopy.last_ready_timestamp = "2026-06-11T00:00:00.000Z";
-      fs.writeFileSync(DB_FILE, JSON.stringify(initialCopy, null, 2));
+      let initialCopy: DBModel;
+      const packagedDbPath = path.join(process.cwd(), "server-db.json");
+      if (isVercel && fs.existsSync(packagedDbPath)) {
+        try {
+          const rawPackaged = fs.readFileSync(packagedDbPath, "utf-8");
+          initialCopy = JSON.parse(rawPackaged) as DBModel;
+          console.log("[Vercel Seeding Boot] Copying pre-packaged baseline database from repository to ephemeral runtime filesystem.");
+        } catch (e) {
+          initialCopy = JSON.parse(JSON.stringify(INITIAL_DB));
+        }
+      } else {
+        initialCopy = JSON.parse(JSON.stringify(INITIAL_DB));
+      }
+      
+      if (!initialCopy.last_ready_timestamp) {
+        initialCopy.last_ready_timestamp = "2026-06-11T00:00:00.000Z";
+      }
+      
+      try {
+        fs.writeFileSync(DB_FILE, JSON.stringify(initialCopy, null, 2));
+      } catch (e) {}
       cachedDb = initialCopy;
       return initialCopy;
     }
@@ -336,8 +367,8 @@ function readDB(): DBModel {
       parsed.last_ready_timestamp = "2026-06-11T00:00:00.000Z";
     }
 
-    // Detect if local disk DB has old seed data and purge it instantly
-    const containsOldSeedData = parsed.properties && parsed.properties.some(p => p.property_id === "prop_1" || p.property_name === "Milimani Court");
+    // Detect if local disk DB has old seed data and purge it instantly (safely targeting unique prop_1 mock ID)
+    const containsOldSeedData = parsed.properties && parsed.properties.some(p => p.property_id === "prop_1");
     if (containsOldSeedData) {
       console.log("Old test database detected on local disk. Purging all test data to start fresh on a clean slate...");
       parsed.properties = [];
@@ -1985,6 +2016,57 @@ app.delete("/api/room-requests/:id", (req, res) => {
 
   writeDB(db);
   res.json({ success: true, message: "Room request removed from database tracking." });
+});
+
+
+// 10.5 FIRESTORE CONFIG DIAGNOSTIC ENDPOINT
+app.get("/api/developer/firestore-status", async (req, res) => {
+  const { email } = req.query;
+  if (!email || typeof email !== "string" || email.toLowerCase().trim() !== "collinskosgei32@gmail.com") {
+    return res.status(403).json({ error: "Access Denied: Unrecognized developer email credentials." });
+  }
+
+  const client = await getFirestoreClient();
+  const config = getAppConfig();
+  
+  if (!client) {
+    return res.json({
+      initialized: false,
+      hasCredentials: hasGcpCredentials,
+      projectId: config.projectId || null,
+      activeDatabaseId: config.firestoreDatabaseId || null,
+      isVercel,
+      status: "disconnected",
+      message: isVercel
+        ? "Firestore initialization bypassed: missing GOOGLE_APPLICATION_CREDENTIALS / FIREBASE_SERVICE_ACCOUNT environment variables on Vercel."
+        : "Firestore configs uninitialized in /firebase-applet-config.json."
+    });
+  }
+
+  try {
+    const docRef = client.collection("app_state").doc("main");
+    const docSnap = await docRef.get();
+    
+    return res.json({
+      initialized: true,
+      hasCredentials: true,
+      projectId: config.projectId,
+      activeDatabaseId: config.firestoreDatabaseId,
+      isVercel,
+      status: "connected",
+      message: `Successfully connected to Google Cloud Firestore database [${config.firestoreDatabaseId}]! Backup document is verified as ${docSnap.exists ? "active and seeded" : "non-existent (will auto-seed on first modification)"}.`
+    });
+  } catch (err: any) {
+    return res.json({
+      initialized: true,
+      hasCredentials: true,
+      projectId: config.projectId,
+      activeDatabaseId: config.firestoreDatabaseId,
+      isVercel,
+      status: "connected_error",
+      message: "Firestore client loaded but connection test failed: " + err.message
+    });
+  }
 });
 
 

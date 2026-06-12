@@ -4,7 +4,7 @@ import {
   Building2, Users, Receipt, Wrench, Shield, LogOut, CheckCircle, Plus, 
   Trash2, PlusCircle, Smartphone, Sparkles, Filter, Landmark, MapPin, Eye, AlertCircle, Clock,
   Menu, X, User, MessageSquare, ListCollapse, Building, ExternalLink, Settings, Key, Edit3,
-  AlertTriangle, Database
+  AlertTriangle, Database, RefreshCw
 } from "lucide-react";
 
 interface AdminPortalProps {
@@ -224,6 +224,46 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
   const [devStatus, setDevStatus] = useState<{ type: "success" | "error"; message: string } | null>(null);
   const [rawFirebaseConfigText, setRawFirebaseConfigText] = useState("");
 
+  const [firestoreStatus, setFirestoreStatus] = useState<{
+    initialized: boolean;
+    hasCredentials: boolean;
+    projectId: string | null;
+    activeDatabaseId: string | null;
+    isVercel: boolean;
+    status: "connected" | "disconnected" | "connected_error" | "loading" | "error";
+    message: string;
+  }>({
+    initialized: false,
+    hasCredentials: false,
+    projectId: null,
+    activeDatabaseId: null,
+    isVercel: false,
+    status: "loading",
+    message: "Analyzing cloud database connectivity..."
+  });
+
+  const fetchFirestoreStatus = async () => {
+    try {
+      const res = await fetch(`/api/developer/firestore-status?email=${encodeURIComponent(session.email || "")}`);
+      if (res.ok) {
+        const data = await res.json();
+        setFirestoreStatus(data);
+      } else {
+        throw new Error("Failed to reach connection diagnostic endpoints.");
+      }
+    } catch (err: any) {
+      setFirestoreStatus({
+        initialized: false,
+        hasCredentials: false,
+        projectId: null,
+        activeDatabaseId: null,
+        isVercel: false,
+        status: "error",
+        message: err.message || "Diagnostic service unavailable."
+      });
+    }
+  };
+
   // Stateless recovery / local browser-side backup variables
   const [localBackupData, setLocalBackupData] = useState<any | null>(null);
   const [showRestoreBanner, setShowRestoreBanner] = useState(false);
@@ -407,6 +447,9 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
     if (activeTab.startsWith("developer_") && session.email?.toLowerCase().trim() === "collinskosgei32@gmail.com") {
       setDevLoading(true);
       setDevStatus(null);
+      if (activeTab === "developer_google") {
+        fetchFirestoreStatus();
+      }
       fetch(`/api/developer/firebase-config?email=${encodeURIComponent(session.email)}`)
         .then(res => {
           if (res.ok) return res.json();
@@ -3806,6 +3849,105 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
                   <span className="text-[9px] text-slate-500 font-mono block mt-1.5">Authorized Node Admin</span>
                 </div>
               </div>
+            </div>
+
+            {/* Cloud Firestore Live Connection Status & Troubleshooting Card */}
+            <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 text-white relative overflow-hidden shadow-xl">
+              <div className="flex items-center justify-between mb-4 pb-4 border-b border-slate-800">
+                <h3 className="font-bold text-sm tracking-wide text-slate-200 flex items-center gap-2">
+                  <Database className="w-4 h-4 text-emerald-400 focus-ring" />
+                  <span>Real-Time Cloud Connection Diagnostics</span>
+                </h3>
+                <button
+                  type="button"
+                  onClick={fetchFirestoreStatus}
+                  className="px-3 py-1 bg-slate-800 hover:bg-slate-700 active:bg-slate-950 text-emerald-400 font-semibold font-mono text-[10px] uppercase rounded-md transition-all flex items-center gap-1 cursor-pointer"
+                >
+                  <RefreshCw className="w-3 h-3" />
+                  <span>Refresh Test</span>
+                </button>
+              </div>
+
+              {firestoreStatus.status === "loading" ? (
+                <div className="flex items-center gap-2 text-xs text-slate-400 font-mono py-2">
+                  <div className="w-4 h-4 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin"></div>
+                  <span>Pinging Firestore micro-service status...</span>
+                </div>
+              ) : firestoreStatus.status === "connected" ? (
+                <div className="space-y-3">
+                  <div className="p-4 bg-emerald-500/10 border border-emerald-500/30 rounded-2xl flex items-start gap-3">
+                    <CheckCircle className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5 animate-bounce" />
+                    <div>
+                      <p className="font-bold text-xs uppercase tracking-wide text-emerald-400">Database Connection Active!</p>
+                      <p className="text-[11.5px] text-slate-300 leading-relaxed mt-1">
+                        We have successfully established a live link with Google Cloud Firestore database <span className="font-mono bg-slate-950 px-1.5 py-0.5 rounded text-emerald-400 font-bold">[{firestoreStatus.activeDatabaseId}]</span> on project <span className="font-mono bg-slate-950 px-1.5 py-0.5 rounded text-emerald-400">{firestoreStatus.projectId}</span>.
+                      </p>
+                      <p className="text-[11px] text-emerald-350/90 leading-relaxed mt-1.5 font-sans">
+                        ✓ All plot registration structures and billing ledgers are persistently safe, synchronized, and durable. This prevents stateless data-loss patterns on serverless instances.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <div className="p-4 bg-rose-500/10 border border-rose-500/30 rounded-2xl flex items-start gap-3">
+                    <AlertCircle className="w-5 h-5 text-rose-400 shrink-0 mt-0.5" />
+                    <div>
+                      <p className="font-bold text-xs uppercase tracking-wide text-rose-400">Standalone Temporary Fallback Mode Active</p>
+                      <p className="text-[11.5px] text-slate-300 leading-relaxed mt-1">
+                        Google Cloud Firestore is <strong>offline or disconnected</strong> on the active server environment.
+                      </p>
+                      <p className="text-[11px] font-mono text-rose-300 bg-black/40 p-2.5 rounded-lg mt-2 leading-relaxed whitespace-pre-wrap">
+                        Diagnostics Log: {firestoreStatus.message}
+                      </p>
+                    </div>
+                  </div>
+
+                  {firestoreStatus.isVercel || true ? (
+                    <div className="p-5 bg-slate-950/40 border border-slate-800 rounded-2xl space-y-3">
+                      <div className="flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
+                        <h4 className="font-bold text-[11px] tracking-wider text-rose-300 uppercase font-mono">Essential Configuration for Vercel Deployments (Prevent State Loss)</h4>
+                      </div>
+                      <p className="text-[11.5px] text-slate-400 leading-relaxed">
+                        Websites hosted on serverless environments like <strong>Vercel</strong> have stateless lifecycles. If you do not supply Google Service Credentials, the application falls back to ephemeral <span className="font-mono text-xs bg-black px-1.5 py-0.5 rounded text-slate-200">/tmp</span> filesystem storage, which <strong>completely resets/forgets created plots and data on browser refresh or inactivity reboots.</strong>
+                      </p>
+
+                      <div className="space-y-3 text-[11px] leading-relaxed text-slate-300 pt-1.5 pl-2.5 border-l-2 border-slate-800">
+                        <div>
+                          <p className="font-bold text-slate-200 uppercase tracking-wider text-[9.5px]">Step 1: Download Firebase Key from Google Console</p>
+                          <p className="text-slate-400 mt-0.5 leading-relaxed">
+                            Open your <a href="https://console.firebase.google.com" target="_blank" rel="noopener noreferrer" className="text-emerald-400 underline font-bold">Firebase Console</a>, navigate to <strong>Project Settings ⚙ &gt; Service Accounts</strong>, and click <strong className="text-emerald-400">"Generate New Private Key"</strong>. This downloads a `.json` credentials file.
+                          </p>
+                        </div>
+
+                        <div>
+                          <p className="font-bold text-slate-200 uppercase tracking-wider text-[9.5px]">Step 2: Add Account Secrets in Vercel Dashboard</p>
+                          <p className="text-slate-400 mt-0.5 leading-relaxed">
+                            Go to your Vercel Project Dashboard &gt; <strong>Settings &gt; Environment Variables</strong>, and register either:
+                          </p>
+                          <ul className="list-disc list-inside mt-2 space-y-2 text-slate-300 pl-1 font-mono text-[9.5px]">
+                            <li>
+                              <strong className="text-amber-400">FIREBASE_SERVICE_ACCOUNT_JSON</strong>: <span className="text-slate-400 font-sans">Paste the entire JSON file contents. (Supports standard copy/paste or safe Base64 strings)</span>
+                            </li>
+                            <p className="text-slate-500 font-sans pl-3 text-[9.5px]">-- OR set both individually --</p>
+                            <li>
+                              <strong className="text-amber-400">FIREBASE_CLIENT_EMAIL</strong>: <span className="text-slate-400 font-sans">matches the <code className="text-emerald-350">"client_email"</code> value</span>
+                            </li>
+                            <li>
+                              <strong className="text-amber-400">FIREBASE_PRIVATE_KEY</strong>: <span className="text-slate-400 font-sans">matches the <code className="text-emerald-350">"private_key"</code> string block</span>
+                            </li>
+                          </ul>
+                        </div>
+                      </div>
+
+                      <div className="p-3 bg-amber-500/10 border border-amber-500/20 text-amber-300 rounded-xl text-[10.5px] font-sans leading-relaxed">
+                        💡 Since raw private keys have multiple newlines and spacing complexities, <strong>our system automatically decodes PEM structures and Base64-encrypted single-line entries on boot</strong> to protect your deployment setups!
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+              )}
             </div>
 
             <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-xs high-contrast-card">
