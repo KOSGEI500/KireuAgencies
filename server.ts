@@ -228,7 +228,7 @@ async function syncFromFirestore(): Promise<DBModel> {
         firestoreDb.room_requests = [];
         firestoreDb.developer_contact = { name: "", phone: "", email: "", background: "" };
         firestoreDb.owner_contact = { name: "", phone: "", email: "", background: "" };
-        firestoreDb.last_ready_timestamp = new Error().stack || new Date().toISOString(); // unique key/timestamp
+        firestoreDb.last_ready_timestamp = "2026-06-11T00:00:00.000Z";
         
         try {
           fs.writeFileSync(DB_FILE, JSON.stringify(firestoreDb, null, 2));
@@ -242,8 +242,10 @@ async function syncFromFirestore(): Promise<DBModel> {
       
       const isVercelEnvironment = !!(process.env.VERCEL || process.env.NOW_RENDERING || process.env.AWS_LAMBDA_FUNCTION_NAME);
       const isFireModified = isDbModified(firestoreDb);
+      const isLocalEmpty = !localDb.properties || localDb.properties.length === 0;
+      const isFireEmpty = !firestoreDb.properties || firestoreDb.properties.length === 0;
       
-      console.log(`[STATE SYNC CHECK] localTime=${localTime}, fireTime=${fireTime}, dbInitialized=${dbInitialized}, isVercel=${isVercelEnvironment}, isFireModified=${isFireModified}`);
+      console.log(`[STATE SYNC CHECK] localTime=${localTime}, fireTime=${fireTime}, dbInitialized=${dbInitialized}, isVercel=${isVercelEnvironment}, isFireModified=${isFireModified}, isLocalEmpty=${isLocalEmpty}, isFireEmpty=${isFireEmpty}`);
       
       if (isVercelEnvironment && !isFireModified) {
         console.log("Vercel serverless environment detected but Firestore is unseeded. Seeding empty Firestore database with local bundled baseline.");
@@ -251,6 +253,9 @@ async function syncFromFirestore(): Promise<DBModel> {
         syncToFirestore(dbToUse).catch((err) => {
           console.error("Failed to seed empty Vercel database onto Firestore:", err);
         });
+      } else if (!isFireEmpty && isLocalEmpty) {
+        console.log("[DATA LOSS PREVENTION] Local database is empty, but Firestore contains existing properties! Prioritizing Firestore state to prevent data wipe.");
+        dbToUse = firestoreDb;
       } else if (localTime > fireTime) {
         console.log("Local database has strictly newer timestamp modifications. Keeping local state and backing up to Firestore...");
         dbToUse = localDb;
@@ -381,7 +386,7 @@ function readDB(): DBModel {
       parsed.room_requests = [];
       parsed.developer_contact = { name: "", phone: "", email: "", background: "" };
       parsed.owner_contact = { name: "", phone: "", email: "", background: "" };
-      parsed.last_ready_timestamp = new Date().toISOString();
+      parsed.last_ready_timestamp = "2026-06-11T00:00:00.000Z";
       try {
         fs.writeFileSync(DB_FILE, JSON.stringify(parsed, null, 2));
       } catch (e) {}

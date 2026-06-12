@@ -1066,7 +1066,8 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
   // Add Room (Global or caretaker)
   const handleAddRoom = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newRoomNum || !newRoomRent || !newRoomUtil || !newRoomPropId) {
+    const activePropId = newRoomPropId || (visibleProperties.length > 0 ? visibleProperties[0].property_id : "");
+    if (!newRoomNum || !newRoomRent || !newRoomUtil || !activePropId) {
       setRoomError("Please fill out complete unit pricing specifications.");
       return;
     }
@@ -1078,7 +1079,7 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           room_number: newRoomNum.trim(),
-          property_id: newRoomPropId,
+          property_id: activePropId,
           monthly_rent: Number(newRoomRent),
           utility_rate: Number(newRoomUtil)
         })
@@ -1094,8 +1095,8 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
       setNewRoomUtil("");
       
       // Auto-switch selected plot to the target plot of the room to instantly display the newly added rooms!
-      if (!isCaretaker && newRoomPropId && newRoomPropId !== selectedPropertyId) {
-        setSelectedPropertyId(newRoomPropId);
+      if (!isCaretaker && activePropId && activePropId !== selectedPropertyId) {
+        setSelectedPropertyId(activePropId);
       } else {
         fetchPropertySpecifics();
       }
@@ -1146,7 +1147,8 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
     setTenantError(null);
     setTenantSuccess(null);
 
-    if (!newTenantName || !newTenantPhone || !newTenantPropId || !newTenantRoom || !newTenantReg) {
+    const activeTenantPropId = newTenantPropId || (visibleProperties.length > 0 ? visibleProperties[0].property_id : "");
+    if (!newTenantName || !newTenantPhone || !activeTenantPropId || !newTenantRoom || !newTenantReg) {
       setTenantError("Please specify name, phone, building anniversary and a vacant room.");
       return;
     }
@@ -1164,7 +1166,7 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
         body: JSON.stringify({
           full_name: newTenantName.trim(),
           phone_number: cleanPhone,
-          property_id: newTenantPropId,
+          property_id: activeTenantPropId,
           assigned_room_number: newTenantRoom,
           registration_date: newTenantReg
         })
@@ -1180,8 +1182,8 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
       setNewTenantPhone("");
       
       // Auto-switch selected plot to the target plot of the tenant to instantly display the newly added resident!
-      if (!isCaretaker && newTenantPropId && newTenantPropId !== selectedPropertyId) {
-        setSelectedPropertyId(newTenantPropId);
+      if (!isCaretaker && activeTenantPropId && activeTenantPropId !== selectedPropertyId) {
+        setSelectedPropertyId(activeTenantPropId);
       } else {
         fetchPropertySpecifics();
       }
