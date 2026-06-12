@@ -883,14 +883,10 @@ Thank you for your prompt transaction. Please keep this slip for reference.
             className="p-1.5 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white transition-all cursor-pointer"
             title="Dismiss Sidebar"
           >
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-
-        {/* Sidebar Navigation Options */}
+                   {/* Sidebar Navigation Options */}
         <nav className="flex-1 p-4 space-y-1.5 overflow-y-auto text-left">
           <span className="block text-[9px] font-bold text-slate-500 uppercase tracking-widest font-mono mb-2 px-2">
-            🧭 Navigation Views
+            Navigation Views
           </span>
 
           {/* Tenant profile summary */}
@@ -906,13 +902,13 @@ Thank you for your prompt transaction. Please keep this slip for reference.
             }`}
           >
             <Compass className="w-4 h-4 text-emerald-400" />
-            <span>👤 Resident Profile Summary</span>
+            <span>Resident Profile Summary</span>
           </button>
 
           <div className="h-px bg-slate-800 my-2" />
 
           <span className="block text-[9px] font-bold text-slate-500 uppercase tracking-widest font-mono px-2 py-1">
-            💰 Financial desk
+            Financial desk
           </span>
 
           {/* Billing Summary Option */}
@@ -928,7 +924,7 @@ Thank you for your prompt transaction. Please keep this slip for reference.
             }`}
           >
             <Receipt className="w-4 h-4 text-emerald-400" />
-            <span>📋 Billing Summary Overview</span>
+            <span>Billing Summary Overview</span>
           </button>
 
           {/* Pay Rent Option */}
@@ -944,7 +940,7 @@ Thank you for your prompt transaction. Please keep this slip for reference.
             }`}
           >
             <Smartphone className="w-4 h-4 text-emerald-400" />
-            <span>📱 Pay Now (M-Pesa STK Push)</span>
+            <span>Pay Now (M-Pesa STK Push)</span>
           </button>
 
           {/* Cleared Payment Receipts Option */}
@@ -960,13 +956,13 @@ Thank you for your prompt transaction. Please keep this slip for reference.
             }`}
           >
             <Wallet className="w-4 h-4 text-emerald-400" />
-            <span>🏢 Cleared Payment Receipts</span>
+            <span>Cleared Payment Receipts</span>
           </button>
 
           <div className="h-px bg-slate-800 my-2" />
 
           <span className="block text-[9px] font-bold text-slate-500 uppercase tracking-widest font-mono px-2 py-1">
-            🛠️ Support & requests
+            Support & requests
           </span>
 
           {/* Repair Request Desk Option */}
@@ -982,7 +978,7 @@ Thank you for your prompt transaction. Please keep this slip for reference.
             }`}
           >
             <Wrench className="w-4 h-4 text-emerald-400" />
-            <span>🛠️ Report an Issue</span>
+            <span>Report an Issue</span>
           </button>
 
           {/* Filed Repair History Option */}
@@ -998,7 +994,7 @@ Thank you for your prompt transaction. Please keep this slip for reference.
             }`}
           >
             <Compass className="w-4 h-4 text-emerald-400" />
-            <span>🧰 Filed Repair History</span>
+            <span>Filed Repair History</span>
           </button>
 
           {/* Real-time Alerts Option */}
@@ -1014,13 +1010,13 @@ Thank you for your prompt transaction. Please keep this slip for reference.
             }`}
           >
             <AlertCircle className="w-4 h-4 text-emerald-400" />
-            <span>🔔 Announcement Alerts Logs</span>
+            <span>Announcement Alerts Logs</span>
           </button>
 
           <div className="h-px bg-slate-800 my-2" />
 
           <span className="block text-[9px] font-bold text-slate-500 uppercase tracking-widest font-mono px-2 py-1">
-            ⚙️ Preferences
+            Preferences
           </span>
 
           <button
@@ -1032,7 +1028,7 @@ Thank you for your prompt transaction. Please keep this slip for reference.
             title="Adjust theme color, custom contrasts, dyslexic font toggle, and scales"
           >
             <Settings className="w-4 h-4 text-blue-400 shrink-0" />
-            <span>⚙️ System Personalization</span>
+            <span>System Personalization</span>
           </button>
 
           <button
@@ -1044,7 +1040,7 @@ Thank you for your prompt transaction. Please keep this slip for reference.
             title="Exit properties tenant dashboard and return to home desk"
           >
             <LogOut className="w-4 h-4 text-rose-400 shrink-0" />
-            <span>🚪 Exit / Log Out</span>
+            <span>Exit / Log Out</span>
           </button>
         </nav>
 
@@ -1072,7 +1068,7 @@ Thank you for your prompt transaction. Please keep this slip for reference.
           <div className="flex flex-col items-end shrink-0">
             <span className="text-[10px] text-slate-450 font-semibold mb-1 uppercase">Dynamic Billing Period</span>
             <span className="px-3 py-1.5 bg-slate-950/60 border border-white/10 text-white font-mono text-xs font-bold rounded-xl shadow-inner">
-              📅 {billingDetails?.cycleLabel || "Calculating cycle..."}
+              {billingDetails?.cycleLabel || "Calculating cycle..."}
             </span>
           </div>
         </div>
@@ -1169,7 +1165,7 @@ Thank you for your prompt transaction. Please keep this slip for reference.
                         <Calendar className="w-4 h-4 text-slate-400" />
                       </div>
                       <span className="font-sans text-sm text-slate-100 font-semibold">
-                        📅 {new Date(tenant.registration_date).toLocaleDateString("en-KE", { day: 'numeric', month: 'long', year: 'numeric' })}
+                        {new Date(tenant.registration_date).toLocaleDateString("en-KE", { day: 'numeric', month: 'long', year: 'numeric' })}
                       </span>
                     </div>
                   </div>
@@ -1184,7 +1180,7 @@ Thank you for your prompt transaction. Please keep this slip for reference.
                         <Hourglass className="w-4 h-4 text-emerald-400" />
                       </div>
                       <span className="font-mono text-sm font-bold text-emerald-400">
-                        ⏳ {calculateTimeCovered(tenant.registration_date)}
+                        {calculateTimeCovered(tenant.registration_date)}
                       </span>
                     </div>
                   </div>
