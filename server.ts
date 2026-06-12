@@ -355,6 +355,18 @@ async function syncFromFirestore(): Promise<DBModel> {
   }
 }
 
+let dbInitialized = false;
+let initPromise: Promise<DBModel> | null = null;
+
+async function triggerSync(): Promise<DBModel> {
+  dbInitialized = false;
+  initPromise = syncFromFirestore().then((db) => {
+    dbInitialized = true;
+    return db;
+  });
+  return initPromise;
+}
+
 async function syncToFirestore(data: DBModel) {
   const client = await getFirestoreClient();
   if (!client) return;
@@ -513,6 +525,26 @@ function getBillingStatusForTenant(tenant: Tenant, db: DBModel, targetDate = new
 
 // MIDDLEWARES
 app.use(express.json({ limit: "15mb" }));
+
+// Middleware to ensure database is fully synchronized before serving API routes
+const ensureDbReady = async (req: any, res: any, next: any) => {
+  if (dbInitialized) {
+    return next();
+  }
+  try {
+    if (!initPromise) {
+      await triggerSync();
+    } else {
+      await initPromise;
+    }
+    next();
+  } catch (err) {
+    console.error("Database initialization failed during request:", err);
+    next(); // Proceed anyway to avoid hanging client requests
+  }
+};
+
+app.use("/api", ensureDbReady);
 
 // ---------------------------------------------------------------------------
 // REST API ENDPOINTS
@@ -1768,7 +1800,7 @@ app.post("/api/developer/firebase-config", async (req, res) => {
             
             // Clear memory cache and force fresh synchronization
             cachedDb = null;
-            await syncFromFirestore();
+            await triggerSync();
           } catch (err: any) {
             console.error("Firestore client re-initialization failed:", err);
             return res.status(500).json({ error: "Configuration written to disk, but connection to dynamic Firestore failed: " + err.message });
@@ -1799,7 +1831,7 @@ function getMpesaTimestamp(): string {
 // ---------------------------------------------------------------------------
 async function startServer() {
   // Synchronize database with Firestore on boot
-  await syncFromFirestore();
+  await triggerSync();
 
   // On Vercel, static files and page fallbacks are handled automatically
   // by Vercel edge routing rules. Skip local listeners and dev middleware.
