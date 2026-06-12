@@ -115,6 +115,18 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
   const [contactSuccessMsg, setContactSuccessMsg] = useState("");
   const [contactErrorMsg, setContactErrorMsg] = useState("");
 
+  // States for Disaster backups & selective recovery
+  interface BackupPoint {
+    backup_id: string;
+    timestamp: string;
+    label: string;
+    type: string;
+  }
+  const [backupsList, setBackupsList] = useState<BackupPoint[]>([]);
+  const [loadingBackups, setLoadingBackups] = useState(false);
+  const [newBackupLabel, setNewBackupLabel] = useState("");
+  const [backupActionLoadingId, setBackupActionLoadingId] = useState<string | null>(null);
+
   // States and Handlers for Vacant Room Requests
   const [roomRequests, setRoomRequests] = useState<RoomRequest[]>([]);
   const [fetchingRoomRequests, setFetchingRoomRequests] = useState(false);
@@ -589,9 +601,108 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
     }
   };
 
+  const fetchBackups = async () => {
+    try {
+      setLoadingBackups(true);
+      const res = await fetch("/api/developer/backups");
+      if (res.ok) {
+        const data = await res.json();
+        setBackupsList(data);
+      }
+    } catch (err) {
+      console.error("Failed to fetch backups:", err);
+    } finally {
+      setLoadingBackups(false);
+    }
+  };
+
+  const handleCreateBackup = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newBackupLabel.trim()) return;
+    try {
+      setLoadingBackups(true);
+      const res = await fetch("/api/developer/backups", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ label: newBackupLabel })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setBackupsList(data.backups || []);
+        setNewBackupLabel("");
+        setContactSuccessMsg("Manual system backup snapshot created successfully!");
+        setContactErrorMsg("");
+      } else {
+        const data = await res.json();
+        setContactErrorMsg(data.error || "Failed to create backup.");
+      }
+    } catch (err) {
+      setContactErrorMsg("Error communicating with servers for backup.");
+    } finally {
+      setLoadingBackups(false);
+    }
+  };
+
+  const handleRestoreBackup = async (backupId: string, type: "all" | "plots" | "tenants" | "payments" | "contacts" | "caretakers") => {
+    const confirmation = window.confirm(
+      type === "all"
+        ? "🚨 WARNING: Are you sure you want to perform a FULL SYSTEM RESTORE? This will overwrite ALL your active data (Tenants, Plots, Rooms, Payments) with this baseline!"
+        : `Are you sure you want to restore the [${type.toUpperCase()}] partition from this backup point? This action cannot be undone.`
+    );
+    if (!confirmation) return;
+
+    try {
+      setBackupActionLoadingId(`${backupId}_restore_${type}`);
+      const res = await fetch(`/api/developer/backups/${backupId}/restore`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setContactSuccessMsg(`Partition recovery successful: ${data.message}`);
+        setContactErrorMsg("");
+        window.alert(`🎉 Rollback process successful! ${data.message} We will now refresh the page to apply the baseline.`);
+        window.location.reload();
+      } else {
+        setContactErrorMsg(data.error || "Recovery process failed.");
+      }
+    } catch (err) {
+      setContactErrorMsg("Failed to communicate with recovery server API.");
+    } finally {
+      setBackupActionLoadingId(null);
+    }
+  };
+
+  const handleDeleteBackup = async (backupId: string) => {
+    const confirmation = window.confirm("Are you sure you want to permanently delete this backup snapshot from archives?");
+    if (!confirmation) return;
+
+    try {
+      setBackupActionLoadingId(`${backupId}_delete`);
+      const res = await fetch(`/api/developer/backups/${backupId}`, {
+        method: "DELETE"
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setBackupsList(data.backups || []);
+        setContactSuccessMsg("Backup snapshot successfully deleted.");
+        setContactErrorMsg("");
+      } else {
+        const data = await res.json();
+        setContactErrorMsg(data.error || "Failed to delete backup.");
+      }
+    } catch (err) {
+      setContactErrorMsg("Error deleting backup snapshot.");
+    } finally {
+      setBackupActionLoadingId(null);
+    }
+  };
+
   useEffect(() => {
     if (activeTab === "contact_config") {
       fetchContactConfig();
+      fetchBackups();
     }
   }, [activeTab]);
 
@@ -898,7 +1009,7 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
       setNewRoomUtil("");
       fetchPropertySpecifics();
       onRefreshProperties();
-      alert("Apartment unit registered as Vacant.");
+      alert(data.message || "Apartment unit registered as Vacant.");
     } catch (err: any) {
       setRoomError(err.message || "Error creating unit.");
     }
@@ -2120,16 +2231,21 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
 
                   <form onSubmit={handleAddRoom} className="space-y-4">
                     <div>
-                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Room Number Code</label>
-                      <input
+                      <div className="flex justify-between items-center mb-1">
+                        <label className="block text-[10px] font-bold text-slate-500 uppercase">Room Number Code(s)</label>
+                        <span className="text-[9px] font-medium text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded">Supports Bulk Add</span>
+                      </div>
+                      <textarea
                         id="new-room-num"
-                        type="text"
-                        placeholder="e.g. 104, B2"
+                        placeholder="e.g. 101, 102, 103, 104 (separated by commas, spaces or newlines)"
                         value={newRoomNum}
                         onChange={(e) => setNewRoomNum(e.target.value)}
-                        className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs focus:outline-none focus:ring-2 focus:ring-slate-800 font-bold uppercase tracking-wider text-slate-800"
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs focus:outline-none focus:ring-2 focus:ring-slate-800 font-bold uppercase tracking-wider text-slate-800 min-h-[58px] resize-y"
                         required
                       />
+                      <p className="text-[9px] text-slate-400 mt-1 leading-normal font-sans">
+                        💡 Put multiple room codes here to register them all at once with this exact same Rent & Deposit price!
+                      </p>
                     </div>
 
                     <div>
@@ -4507,6 +4623,156 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
                     </div>
                   </form>
                 </div>
+              </div>
+            </div>
+
+            {/* PANEL 3: DISASTER RECOVERY & SYSTEM ROLLBACK ARCHIVES */}
+            <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl space-y-6 text-slate-100 lg:col-span-2">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800 pb-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-emerald-500/10 rounded-xl border border-emerald-500/20 text-emerald-400">
+                    <Database className="w-5 h-5 animate-pulse" />
+                  </div>
+                  <div>
+                    <h3 className="font-extrabold text-xs tracking-wide text-white font-display uppercase">
+                      Collins Kosgei's Root Disaster Recovery & Backup Panel
+                    </h3>
+                    <p className="text-[11px] text-slate-400 font-sans mt-0.5">
+                      If database collections are deleted or modified by other admins, select a rollback checkpoint state to recover immediately.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Form to create manual snapshots */}
+              <form onSubmit={handleCreateBackup} className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end bg-slate-950/40 p-4 rounded-2xl border border-slate-800/40">
+                <div className="md:col-span-2 space-y-1.5 text-left">
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                    Create Named Manual System Snapshot
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={newBackupLabel}
+                    onChange={(e) => setNewBackupLabel(e.target.value)}
+                    placeholder="e.g. Working Baseline before cleaning tenants list"
+                    className="w-full bg-slate-900 border border-slate-800 focus:bg-slate-850 text-white text-xs rounded-xl py-2 px-3 focus:outline-none focus:ring-1 focus:ring-emerald-400 font-sans"
+                  />
+                </div>
+                <button
+                  type="submit"
+                  disabled={loadingBackups || !newBackupLabel.trim()}
+                  className="px-5 py-2.5 bg-emerald-500 text-slate-950 hover:bg-emerald-400 disabled:bg-slate-800 text-[10px] tracking-wider font-extrabold uppercase rounded-xl transition-all shadow-md flex items-center justify-center gap-1.5 cursor-pointer disabled:text-slate-500 disabled:cursor-not-allowed h-[36px]"
+                >
+                  <Plus className="w-4 h-4 shrink-0" />
+                  <span>{loadingBackups ? "Snapshotting..." : "Take System Snapshot"}</span>
+                </button>
+              </form>
+
+              {/* Backups List */}
+              <div className="space-y-4">
+                <h4 className="text-[11px] uppercase tracking-wider font-extrabold text-slate-400 text-left">
+                  Available Recovery Restore Points ({backupsList.length})
+                </h4>
+
+                {loadingBackups && backupsList.length === 0 ? (
+                  <div className="text-center py-6 text-xs text-slate-500 font-mono">
+                    Querying rolling rollback archives in Firestore...
+                  </div>
+                ) : backupsList.length === 0 ? (
+                  <div className="text-center py-8 text-xs text-slate-500 font-mono bg-slate-950/20 rounded-2xl border border-dashed border-slate-800">
+                    No backup snapshots archived. Perform an operation on Rooms, Plots, or Tenants to seed an automated baseline stamp.
+                  </div>
+                ) : (
+                  <div className="divide-y divide-slate-800/60 max-h-96 overflow-y-auto pr-1">
+                    {backupsList.map((backup) => (
+                      <div key={backup.backup_id} className="py-4 first:pt-0 last:pb-0 flex flex-col xl:flex-row xl:items-center justify-between gap-4 text-left border-b border-slate-800/20 last:border-0">
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2 flex-wrap bg-transparent">
+                            <span className="font-bold text-xs text-white max-w-[340px] truncate bg-transparent">
+                              {backup.label}
+                            </span>
+                            <span className={`px-2 py-0.5 font-mono text-[9px] font-bold rounded-full uppercase border ${
+                              backup.type === "Manual"
+                                ? "bg-purple-500/10 border-purple-500/25 text-purple-400"
+                                : "bg-blue-500/10 border-blue-500/25 text-blue-400"
+                            }`}>
+                              {backup.type}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2 text-[10px] text-slate-400 font-mono flex-wrap bg-transparent">
+                            <span className="bg-transparent">stamp_key: {backup.backup_id}</span>
+                            <span className="bg-transparent">•</span>
+                            <span className="bg-transparent">{new Date(backup.timestamp).toLocaleString()}</span>
+                          </div>
+                        </div>
+
+                        {/* Recovery Action Suite */}
+                        <div className="flex flex-wrap items-center gap-1.5 bg-transparent">
+                          <button
+                            type="button"
+                            disabled={backupActionLoadingId !== null}
+                            onClick={() => handleRestoreBackup(backup.backup_id, "plots")}
+                            className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-750 text-slate-250 rounded-lg text-[9px] tracking-wide font-bold transition-all flex items-center gap-1 disabled:opacity-50 cursor-pointer"
+                            title="Recover Plots and Rooms definitions only"
+                          >
+                            🏠 Plots ({backupActionLoadingId === `${backup.backup_id}_restore_plots` ? "loading..." : "recover"})
+                          </button>
+                          
+                          <button
+                            type="button"
+                            disabled={backupActionLoadingId !== null}
+                            onClick={() => handleRestoreBackup(backup.backup_id, "tenants")}
+                            className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-750 text-slate-250 rounded-lg text-[9px] tracking-wide font-bold transition-all flex items-center gap-1 disabled:opacity-50 cursor-pointer"
+                            title="Recover Tenants lists of occupancy only"
+                          >
+                            👥 Tenants ({backupActionLoadingId === `${backup.backup_id}_restore_tenants` ? "loading..." : "recover"})
+                          </button>
+
+                          <button
+                            type="button"
+                            disabled={backupActionLoadingId !== null}
+                            onClick={() => handleRestoreBackup(backup.backup_id, "payments")}
+                            className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-750 text-slate-250 rounded-lg text-[9px] tracking-wide font-bold transition-all flex items-center gap-1 disabled:opacity-50 cursor-pointer"
+                            title="Recover Rent ledger and maintenance files only"
+                          >
+                            💵 Ledger ({backupActionLoadingId === `${backup.backup_id}_restore_payments` ? "loading..." : "recover"})
+                          </button>
+
+                          <button
+                            type="button"
+                            disabled={backupActionLoadingId !== null}
+                            onClick={() => handleRestoreBackup(backup.backup_id, "contacts")}
+                            className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-755 text-slate-250 rounded-lg text-[9px] tracking-wide font-bold transition-all flex items-center gap-1 disabled:opacity-50 cursor-pointer"
+                            title="Recover branding contact details only"
+                          >
+                            📞 Contacts ({backupActionLoadingId === `${backup.backup_id}_restore_contacts` ? "loading..." : "recover"})
+                          </button>
+
+                          <button
+                            type="button"
+                            disabled={backupActionLoadingId !== null}
+                            onClick={() => handleRestoreBackup(backup.backup_id, "all")}
+                            className="px-2.5 py-1.5 bg-rose-950/50 hover:bg-rose-955 border border-rose-500/25 text-rose-350 rounded-lg text-[9px] tracking-wide font-bold transition-all flex items-center gap-1 disabled:opacity-50 cursor-pointer"
+                            title="Perform an overwrite rollback of ALL database states"
+                          >
+                            🚨 FULL RESTORE ({backupActionLoadingId === `${backup.backup_id}_restore_all` ? "..." : "recover"})
+                          </button>
+
+                          <button
+                            type="button"
+                            disabled={backupActionLoadingId !== null}
+                            onClick={() => handleDeleteBackup(backup.backup_id)}
+                            className="p-1.5 bg-slate-800/50 hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 border border-slate-800 hover:border-rose-500/20 rounded-lg transition-all cursor-pointer disabled:opacity-50"
+                            title="Discard baseline from registry"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
 

@@ -15,12 +15,51 @@
         }
       },
       "required": ["email", "role"]
+    },
+    "AppState": {
+      "title": "AppState",
+      "description": "Full relational database snapshot state",
+      "type": "object",
+      "properties": {
+        "properties": { "type": "array" },
+        "rooms": { "type": "array" },
+        "tenants": { "type": "array" },
+        "payments": { "type": "array" },
+        "maintenance": { "type": "array" },
+        "caretakers": { "type": "array" },
+        "sms_logs": { "type": "array" },
+        "room_requests": { "type": "array" },
+        "developer_contact": { "type": "object" },
+        "owner_contact": { "type": "object" },
+        "last_ready_timestamp": { "type": "string" }
+      }
+    },
+    "BackupPoint": {
+      "title": "BackupPoint",
+      "description": "A single point-in-time disaster recovery restore baseline",
+      "type": "object",
+      "properties": {
+        "backup_id": { "type": "string" },
+        "timestamp": { "type": "string" },
+        "label": { "type": "string" },
+        "type": { "type": "string" },
+        "db": { "$ref": "#/entities/AppState" }
+      },
+      "required": ["backup_id", "timestamp", "label", "type", "db"]
     }
   },
   "firestore": {
     "admins/{adminId}": {
       "schema": "AdminInfo",
       "description": "Super admin collection for secure verification"
+    },
+    "app_state/{docId}": {
+      "schema": "AppState",
+      "description": "Durable estate system states backup collection"
+    },
+    "database_backups/{backupId}": {
+      "schema": "BackupPoint",
+      "description": "Rolling disaster recovery rollback point collection"
     }
   }
 }

@@ -219,40 +219,20 @@ async function syncFromFirestore(): Promise<DBModel> {
         await syncToFirestore(firestoreDb);
       }
       
-      if (dbInitialized) {
-        // Once initialized, Firestore is ALWAYS our single master source of truth.
-        // Overwrite disk/cache with whatever is in Firestore to align with other container instances.
-        console.log("Pulling latest database from Firestore source of truth (TTL sync)...");
-        dbToUse = firestoreDb;
+      const localTime = new Date(localDb.last_ready_timestamp || "2026-06-11T00:00:00.000Z").getTime();
+      const fireTime = new Date(firestoreDb.last_ready_timestamp || "2026-06-11T00:00:00.000Z").getTime();
+      
+      console.log(`[STATE SYNC CHECK] localTime=${localTime}, fireTime=${fireTime}, dbInitialized=${dbInitialized}`);
+      
+      if (localTime > fireTime) {
+        console.log("Local workspace database has strictly newer timestamp modifications. Keeping local state and backing up to Firestore...");
+        dbToUse = localDb;
+        syncToFirestore(dbToUse).catch((err) => {
+          console.error("Failed to back-sync local modifications to Firestore during TTL check:", err);
+        });
       } else {
-        // On very first boot, we perform a one-time smart sync/merge between local disk and Firestore
-        const localTime = new Date(localDb.last_ready_timestamp || "2026-06-11T00:00:00.000Z").getTime();
-        const fireTime = new Date(firestoreDb.last_ready_timestamp || "2026-06-11T00:00:00.000Z").getTime();
-        
-        const isLocalModified = isDbModified(localDb);
-        const isFireModified = isDbModified(firestoreDb);
-        
-        console.log(`[BOOT STATE SYNC CHECK] isLocalModified=${isLocalModified}, isFireModified=${isFireModified}, localTime=${localTime}, fireTime=${fireTime}`);
-        
-        if (isLocalModified && !isFireModified) {
-          console.log("Local workspace database has user customizations, but Firestore does not. Synchronizing local state up to Firestore...");
-          dbToUse = localDb;
-          syncToFirestore(dbToUse).catch((err) => {
-            console.error("Failed to back-sync local workspace modifications to Firestore on startup:", err);
-          });
-        } else if (isFireModified && !isLocalModified) {
-          console.log("Firestore database has user customizations, but local disk does not. Restoring Firestore state down to disk...");
-          dbToUse = firestoreDb;
-        } else if (localTime > fireTime) {
-          console.log("Local workspace database has strictly newer timestamp modifications. Synchronizing local state up to Firestore...");
-          dbToUse = localDb;
-          syncToFirestore(dbToUse).catch((err) => {
-            console.error("Failed to back-sync local workspace modifications to Firestore on startup:", err);
-          });
-        } else {
-          console.log("Firestore database has newer, equal, or master modifications. Syncing Firestore state down to disk...");
-          dbToUse = firestoreDb;
-        }
+        console.log("Firestore database has newer or equal modifications. Syncing Firestore state down to disk/memory...");
+        dbToUse = firestoreDb;
       }
     } else {
       console.log("No existing database document found in Cloud Firestore. Seeding local dataset up to Firestore...");
@@ -544,6 +524,201 @@ app.post("/api/db/import", (req, res) => {
   res.json({ success: true, message: "Stateless database imported and synchronized successfully." });
 });
 
+// DISASTER RECOVERY & SYSTEM BACKUPS
+interface BackupPoint {
+  backup_id: string;
+  timestamp: string;
+  label: string;
+  type: string;
+  db: DBModel;
+}
+
+const BACKUPS_FILE = path.join(process.cwd(), "server-backups.json");
+
+function readLocalBackups(): BackupPoint[] {
+  try {
+    if (!fs.existsSync(BACKUPS_FILE)) {
+      return [];
+    }
+    const raw = fs.readFileSync(BACKUPS_FILE, "utf-8");
+    return JSON.parse(raw) as BackupPoint[];
+  } catch (error) {
+    return [];
+  }
+}
+
+function writeLocalBackups(backups: BackupPoint[]) {
+  try {
+    fs.writeFileSync(BACKUPS_FILE, JSON.stringify(backups, null, 2));
+  } catch (error) {}
+}
+
+async function saveBackupPoint(label: string, type: "Manual" | "Automatic", customDb?: DBModel) {
+  const db = customDb || readDB();
+  const backup_id = "backup_" + Date.now();
+  const timestamp = new Date().toISOString();
+  
+  const newBackup: BackupPoint = {
+    backup_id,
+    timestamp,
+    label,
+    type,
+    db: JSON.parse(JSON.stringify(db))
+  };
+
+  let localBackups = readLocalBackups();
+  localBackups.unshift(newBackup);
+  if (localBackups.length > 30) {
+    localBackups = localBackups.slice(0, 30);
+  }
+  writeLocalBackups(localBackups);
+
+  const client = await getFirestoreClient();
+  if (client) {
+    try {
+      const cleanedBackup = cleanseUndefined(newBackup);
+      await client.collection("database_backups").doc(backup_id).set(cleanedBackup);
+      console.log(`Disaster Backup Point [${label}] committed successfully to Cloud Firestore!`);
+    } catch (error: any) {
+      if (error && error.message && error.message.includes("PERMISSION_DENIED")) {
+        console.warn(`Disaster Backup Point [${label}] sync to Firestore bypassed: Service credentials lack writing permissions.`);
+      } else {
+        console.error("Failed to sync backup point to Firestore:", error);
+      }
+    }
+  }
+}
+
+async function getBackupPoints(): Promise<BackupPoint[]> {
+  const localList = readLocalBackups();
+  const client = await getFirestoreClient();
+  if (!client) {
+    return localList;
+  }
+  try {
+    const snapshot = await client.collection("database_backups").orderBy("timestamp", "desc").limit(30).get();
+    const firestoreList: BackupPoint[] = [];
+    snapshot.forEach(doc => {
+      firestoreList.push(doc.data() as BackupPoint);
+    });
+    
+    const allMap = new Map<string, BackupPoint>();
+    [...firestoreList, ...localList].forEach(b => {
+      if (b && b.backup_id) {
+        allMap.set(b.backup_id, b);
+      }
+    });
+    
+    return Array.from(allMap.values()).sort(
+      (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+    );
+  } catch (e) {
+    return localList;
+  }
+}
+
+// DISASTER RECOVERY ENDPOINTS
+app.get("/api/developer/backups", async (req, res) => {
+  try {
+    const list = await getBackupPoints();
+    res.json(list);
+  } catch (err: any) {
+    res.status(505).json({ error: err.message || "Failed to fetch backups." });
+  }
+});
+
+app.post("/api/developer/backups", async (req, res) => {
+  const { label } = req.body;
+  if (!label) {
+    return res.status(400).json({ error: "Backup description label is required." });
+  }
+  try {
+    const db = readDB();
+    await saveBackupPoint(label, "Manual", db);
+    const list = await getBackupPoints();
+    res.json({ success: true, message: "Manual System Snapshot point registered.", backups: list });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || "Failed to create manual backup." });
+  }
+});
+
+app.post("/api/developer/backups/:id/restore", async (req, res) => {
+  const { id } = req.params;
+  const { type } = req.body; // "all" | "plots" | "tenants" | "payments" | "contacts" | "caretakers"
+  
+  try {
+    const list = await getBackupPoints();
+    const backup = list.find(b => b.backup_id === id);
+    if (!backup) {
+      return res.status(404).json({ error: "Disaster Recovery backup point not found." });
+    }
+    
+    const currentDb = readDB();
+    const sourceDb = backup.db;
+    
+    let message = "";
+    
+    if (type === "all") {
+      currentDb.properties = sourceDb.properties || [];
+      currentDb.rooms = sourceDb.rooms || [];
+      currentDb.tenants = sourceDb.tenants || [];
+      currentDb.payments = sourceDb.payments || [];
+      currentDb.maintenance = sourceDb.maintenance || [];
+      currentDb.caretakers = sourceDb.caretakers || [];
+      currentDb.sms_logs = sourceDb.sms_logs || [];
+      currentDb.room_requests = sourceDb.room_requests || [];
+      currentDb.developer_contact = sourceDb.developer_contact || { name: "", phone: "", email: "", background: "" };
+      currentDb.owner_contact = sourceDb.owner_contact || { name: "", phone: "", email: "", background: "" };
+      message = "Full system rollback completed. Overwrote all active databases.";
+    } else if (type === "plots") {
+      currentDb.properties = sourceDb.properties || [];
+      currentDb.rooms = sourceDb.rooms || [];
+      message = "Plots and rooms structure rollback completed successfully.";
+    } else if (type === "tenants") {
+      currentDb.tenants = sourceDb.tenants || [];
+      message = "Tenants lease files rollback completed successfully.";
+    } else if (type === "payments") {
+      currentDb.payments = sourceDb.payments || [];
+      currentDb.maintenance = sourceDb.maintenance || [];
+      message = "Rent transaction sheets and ticket queues rollback completed.";
+    } else if (type === "caretakers") {
+      currentDb.caretakers = sourceDb.caretakers || [];
+      message = "Caretaker allocations table rollback completed.";
+    } else if (type === "contacts") {
+      currentDb.developer_contact = sourceDb.developer_contact || { name: "", phone: "", email: "", background: "" };
+      currentDb.owner_contact = sourceDb.owner_contact || { name: "", phone: "", email: "", background: "" };
+      message = "Developer and Owner branding contacts rollback completed.";
+    } else {
+      return res.status(400).json({ error: `Invalid recovery partition type [${type}].` });
+    }
+    
+    writeDB(currentDb);
+    res.json({ success: true, message, database: currentDb });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || "Disaster recovery rollback failed." });
+  }
+});
+
+app.delete("/api/developer/backups/:id", async (req, res) => {
+  const { id } = req.params;
+  try {
+    let localList = readLocalBackups();
+    localList = localList.filter(b => b.backup_id !== id);
+    writeLocalBackups(localList);
+    
+    const client = await getFirestoreClient();
+    if (client) {
+      try {
+        await client.collection("database_backups").doc(id).delete();
+      } catch (e) {}
+    }
+    const list = await getBackupPoints();
+    res.json({ success: true, message: "Backup snapshot deleted from archives.", backups: list });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || "Failed to remove backup snapshot." });
+  }
+});
+
 // CONTACT INFO ENDPOINTS
 app.get("/api/contact", (req, res) => {
   const db = readDB();
@@ -599,6 +774,7 @@ app.post("/api/properties", (req, res) => {
 
   db.properties.push(newProperty);
   writeDB(db);
+  saveBackupPoint("Automated: Registered Plot [" + newProperty.property_name + "]", "Automatic", db).catch(() => {});
   res.json(newProperty);
 });
 
@@ -733,8 +909,26 @@ app.post("/api/rooms", (req, res) => {
   const db = readDB();
   const { room_number, property_id, monthly_rent, utility_rate } = req.body;
 
-  if (!room_number || !property_id || monthly_rent === undefined || utility_rate === undefined) {
-    return res.status(400).json({ error: "All room details are required." });
+  if (!property_id || monthly_rent === undefined || utility_rate === undefined) {
+    return res.status(400).json({ error: "Property ID and pricing details are required." });
+  }
+
+  // Parse room numbers from various formats (array, comma-separated, space-separated, newlines)
+  let roomNumbers: string[] = [];
+  if (Array.isArray(req.body.room_numbers)) {
+    roomNumbers = req.body.room_numbers.map((r: any) => String(r).trim()).filter(Boolean);
+  } else if (typeof room_number === "string") {
+    if (/[,\n\r;]/.test(room_number)) {
+      roomNumbers = room_number.split(/[,\n\r;]+/).map(r => r.trim()).filter(Boolean);
+    } else {
+      roomNumbers = room_number.split(/\s+/).map(r => r.trim()).filter(Boolean);
+    }
+  } else if (room_number) {
+    roomNumbers = [String(room_number).trim()];
+  }
+
+  if (roomNumbers.length === 0) {
+    return res.status(400).json({ error: "Please enter at least one room number code." });
   }
 
   // Validate property exists
@@ -743,27 +937,50 @@ app.post("/api/rooms", (req, res) => {
     return res.status(404).json({ error: "Target property not found." });
   }
 
-  // Validate duplicate room code within property
-  const duplicate = db.rooms.find((r) => r.property_id === property_id && r.room_number === room_number);
-  if (duplicate) {
-    return res.status(400).json({ error: "Room number already exists in this property." });
+  const addedRooms: Room[] = [];
+  const skippedRooms: string[] = [];
+
+  for (const num of roomNumbers) {
+    const isDuplicate = db.rooms.some(r => r.property_id === property_id && r.room_number.toLowerCase() === num.toLowerCase());
+    if (isDuplicate) {
+      skippedRooms.push(num);
+      continue;
+    }
+
+    const newRoom: Room = {
+      room_number: num,
+      property_id,
+      status: "Vacant",
+      monthly_rent: Number(monthly_rent),
+      utility_rate: Number(utility_rate)
+    };
+
+    db.rooms.push(newRoom);
+    addedRooms.push(newRoom);
   }
 
-  const newRoom: Room = {
-    room_number,
-    property_id,
-    status: "Vacant",
-    monthly_rent: Number(monthly_rent),
-    utility_rate: Number(utility_rate)
-  };
+  if (addedRooms.length === 0) {
+    if (skippedRooms.length > 0) {
+      return res.status(400).json({ error: `All provided units (${skippedRooms.join(", ")}) already exist in this property.` });
+    }
+    return res.status(400).json({ error: "No valid room numbers provided." });
+  }
 
-  db.rooms.push(newRoom);
-  
   // Update property's unit count
   property.total_units = db.rooms.filter((r) => r.property_id === property_id).length;
 
   writeDB(db);
-  res.json(newRoom);
+  saveBackupPoint(`Automated: Registered ${addedRooms.length} unit(s) under Plot [${property.property_name}]`, "Automatic", db).catch(() => {});
+
+  res.json({
+    success: true,
+    message: `Registered ${addedRooms.length} room(s) successfully.` + (skippedRooms.length > 0 ? ` Skipped existing: ${skippedRooms.join(", ")}` : ""),
+    rooms: addedRooms,
+    room_number: addedRooms[0].room_number,
+    property_id: addedRooms[0].property_id,
+    monthly_rent: addedRooms[0].monthly_rent,
+    utility_rate: addedRooms[0].utility_rate
+  });
 });
 
 // 4. TENANTS ENDPOINTS
@@ -830,6 +1047,7 @@ app.post("/api/tenants", (req, res) => {
   db.tenants.push(newTenant);
 
   writeDB(db);
+  saveBackupPoint(`Automated: Booked Tenant [${newTenant.full_name}] directly into Room [${newTenant.assigned_room_number}]`, "Automatic", db).catch(() => {});
   res.json(newTenant);
 });
 
@@ -851,6 +1069,7 @@ app.delete("/api/tenants/:tenant_id", (req, res) => {
 
   db.tenants.splice(tenantIdx, 1);
   writeDB(db);
+  saveBackupPoint(`Automated: Evicted / Checked out Tenant [${tenant.full_name}]`, "Automatic", db).catch(() => {});
   res.json({ message: "Tenant successfully checked out. Room is now Vacant." });
 });
 
@@ -899,6 +1118,7 @@ app.delete("/api/properties/:property_id/rooms/:room_number", (req, res) => {
   }
 
   writeDB(db);
+  saveBackupPoint(`Automated: Removed Unit ${room_number} from Plot ID ${property_id}`, "Automatic", db).catch(() => {});
   res.json({ message: "Apartment unit removed successfully." });
 });
 
@@ -920,6 +1140,7 @@ app.delete("/api/properties/:property_id", (req, res) => {
   db.maintenance = db.maintenance.filter((m) => m.property_id !== property_id);
 
   writeDB(db);
+  saveBackupPoint(`Automated: Deleted Plot ID ${property_id} and purged all nested data`, "Automatic", db).catch(() => {});
   res.json({ message: "Property and all its nested records cascaded off successfully." });
 });
 

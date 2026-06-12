@@ -25,5 +25,15 @@ service cloud.firestore {
       allow read: if isSignedIn() && isEmailVerified() && (request.auth.uid == adminId || isSuperAdminEmail(request.auth.token.email));
       allow write: if false; // Restricted database entries
     }
+
+    // Secure match block for App State (system configuration & backups)
+    match /app_state/{docId} {
+      allow read, write: if isSignedIn() && isEmailVerified() && isSuperAdminEmail(request.auth.token.email);
+    }
+
+    // Secure match block for Database Backups
+    match /database_backups/{backupId} {
+      allow read, write: if isSignedIn() && isEmailVerified() && isSuperAdminEmail(request.auth.token.email);
+    }
   }
 }
