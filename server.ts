@@ -300,33 +300,40 @@ async function syncFromFirestore(): Promise<DBModel> {
       if (!firestoreDb.developer_contact) firestoreDb.developer_contact = { ...INITIAL_DB.developer_contact };
       if (!firestoreDb.owner_contact) firestoreDb.owner_contact = { ...INITIAL_DB.owner_contact };
       
-      const localTime = new Date(localDb.last_ready_timestamp || "2026-06-11T00:00:00.000Z").getTime();
-      const fireTime = new Date(firestoreDb.last_ready_timestamp || "2026-06-11T00:00:00.000Z").getTime();
-      
-      // Check if either database local or firestore has user customizations relative to defaults
-      const isLocalModified = isDbModified(localDb);
-      const isFireModified = isDbModified(firestoreDb);
-      
-      console.log(`[STATE SYNC CHECK] isLocalModified=${isLocalModified}, isFireModified=${isFireModified}, localTime=${localTime}, fireTime=${fireTime}`);
-      
-      if (isLocalModified && !isFireModified) {
-        console.log("Local workspace database has user customizations, but Firestore does not. Synchronizing local state up to Firestore...");
-        dbToUse = localDb;
-        syncToFirestore(dbToUse).catch((err) => {
-          console.error("Failed to back-sync local workspace modifications to Firestore on startup:", err);
-        });
-      } else if (isFireModified && !isLocalModified) {
-        console.log("Firestore database has user customizations, but local disk does not. Restoring Firestore state down to disk...");
+      if (dbInitialized) {
+        // Once initialized, Firestore is ALWAYS our single master source of truth.
+        // Overwrite disk/cache with whatever is in Firestore to align with other container instances.
+        console.log("Pulling latest database from Firestore source of truth (TTL sync)...");
         dbToUse = firestoreDb;
-      } else if (localTime > fireTime) {
-        console.log("Local workspace database has strictly newer timestamp modifications. Synchronizing local state up to Firestore...");
-        dbToUse = localDb;
-        syncToFirestore(dbToUse).catch((err) => {
-          console.error("Failed to back-sync local workspace modifications to Firestore on startup:", err);
-        });
       } else {
-        console.log("Firestore database has newer, equal, or master modifications. Syncing Firestore state down to disk...");
-        dbToUse = firestoreDb;
+        // On very first boot, we perform a one-time smart sync/merge between local disk and Firestore
+        const localTime = new Date(localDb.last_ready_timestamp || "2026-06-11T00:00:00.000Z").getTime();
+        const fireTime = new Date(firestoreDb.last_ready_timestamp || "2026-06-11T00:00:00.000Z").getTime();
+        
+        const isLocalModified = isDbModified(localDb);
+        const isFireModified = isDbModified(firestoreDb);
+        
+        console.log(`[BOOT STATE SYNC CHECK] isLocalModified=${isLocalModified}, isFireModified=${isFireModified}, localTime=${localTime}, fireTime=${fireTime}`);
+        
+        if (isLocalModified && !isFireModified) {
+          console.log("Local workspace database has user customizations, but Firestore does not. Synchronizing local state up to Firestore...");
+          dbToUse = localDb;
+          syncToFirestore(dbToUse).catch((err) => {
+            console.error("Failed to back-sync local workspace modifications to Firestore on startup:", err);
+          });
+        } else if (isFireModified && !isLocalModified) {
+          console.log("Firestore database has user customizations, but local disk does not. Restoring Firestore state down to disk...");
+          dbToUse = firestoreDb;
+        } else if (localTime > fireTime) {
+          console.log("Local workspace database has strictly newer timestamp modifications. Synchronizing local state up to Firestore...");
+          dbToUse = localDb;
+          syncToFirestore(dbToUse).catch((err) => {
+            console.error("Failed to back-sync local workspace modifications to Firestore on startup:", err);
+          });
+        } else {
+          console.log("Firestore database has newer, equal, or master modifications. Syncing Firestore state down to disk...");
+          dbToUse = firestoreDb;
+        }
       }
     } else {
       console.log("No existing database document found in Cloud Firestore. Seeding local dataset up to Firestore...");
@@ -357,11 +364,15 @@ async function syncFromFirestore(): Promise<DBModel> {
 
 let dbInitialized = false;
 let initPromise: Promise<DBModel> | null = null;
+let lastSyncTime = 0;
+let lastFetchPromise: Promise<DBModel> | null = null;
+const CACHE_TTL = 3000; // 3 seconds TTL is perfect for clustering concurrent API requests while keeping refreshes fully up-to-date
 
 async function triggerSync(): Promise<DBModel> {
   dbInitialized = false;
   initPromise = syncFromFirestore().then((db) => {
     dbInitialized = true;
+    lastSyncTime = Date.now();
     return db;
   });
   return initPromise;
@@ -528,20 +539,29 @@ app.use(express.json({ limit: "15mb" }));
 
 // Middleware to ensure database is fully synchronized before serving API routes
 const ensureDbReady = async (req: any, res: any, next: any) => {
-  if (dbInitialized) {
-    return next();
-  }
-  try {
-    if (!initPromise) {
-      await triggerSync();
-    } else {
-      await initPromise;
+  const now = Date.now();
+  
+  // If we are uninitialized OR our cache has expired (stale after 3 seconds)
+  if (!dbInitialized || (now - lastSyncTime > CACHE_TTL)) {
+    try {
+      if (!lastFetchPromise) {
+        // Trigger a fresh sync from Firestore
+        lastFetchPromise = (async () => {
+          try {
+            const db = await syncFromFirestore();
+            lastSyncTime = Date.now();
+            return db;
+          } finally {
+            lastFetchPromise = null;
+          }
+        })();
+      }
+      await lastFetchPromise;
+    } catch (err) {
+      console.error("Database synchronization failed during middleware path:", err);
     }
-    next();
-  } catch (err) {
-    console.error("Database initialization failed during request:", err);
-    next(); // Proceed anyway to avoid hanging client requests
   }
+  next();
 };
 
 app.use("/api", ensureDbReady);
