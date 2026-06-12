@@ -1,0 +1,23 @@
+{
+  "properties": [],
+  "rooms": [],
+  "tenants": [],
+  "payments": [],
+  "maintenance": [],
+  "caretakers": [],
+  "sms_logs": [],
+  "room_requests": [],
+  "developer_contact": {
+    "name": "",
+    "phone": "",
+    "email": "",
+    "background": ""
+  },
+  "owner_contact": {
+    "name": "",
+    "phone": "",
+    "email": "",
+    "background": ""
+  },
+  "last_ready_timestamp": "2026-06-11T00:00:00.000Z"
+}

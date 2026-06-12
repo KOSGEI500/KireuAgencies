@@ -99,131 +99,27 @@ interface DBModel {
   last_ready_timestamp?: string;
 }
 
-// Initial seed data representing real plots/houses across Kenya
+// Initial seed data representing real plots/houses across Kenya - now a clean starter template
 const INITIAL_DB: DBModel = {
-  properties: [
-    {
-      property_id: "prop_1",
-      property_name: "Milimani Court",
-      geographic_location: "Milimani, Nairobi",
-      total_units: 4
-    },
-    {
-      property_id: "prop_2",
-      property_name: "Eldoret Heights",
-      geographic_location: "Elgon View, Eldoret",
-      total_units: 4
-    },
-    {
-      property_id: "prop_3",
-      property_name: "Kilimani Ridge",
-      geographic_location: "Kilimani, Nakuru",
-      total_units: 2
-    }
-  ],
-  rooms: [
-    // Milimani Court Rooms
-    { room_number: "101", property_id: "prop_1", status: "Vacant", monthly_rent: 18000, utility_rate: 1500 },
-    { room_number: "102", property_id: "prop_1", status: "Occupied", monthly_rent: 18000, utility_rate: 1500 },
-    { room_number: "103", property_id: "prop_1", status: "Occupied", monthly_rent: 22000, utility_rate: 2000 },
-    { room_number: "104", property_id: "prop_1", status: "Vacant", monthly_rent: 15000, utility_rate: 1200 },
-    // Eldoret Heights Rooms
-    { room_number: "A1", property_id: "prop_2", status: "Occupied", monthly_rent: 12000, utility_rate: 1000 },
-    { room_number: "A2", property_id: "prop_2", status: "Vacant", monthly_rent: 12000, utility_rate: 1000 },
-    { room_number: "B1", property_id: "prop_2", status: "Occupied", monthly_rent: 15000, utility_rate: 1200 },
-    { room_number: "B2", property_id: "prop_2", status: "Vacant", monthly_rent: 15000, utility_rate: 1200 },
-    // Kilimani Ridge Rooms
-    { room_number: "R1", property_id: "prop_3", status: "Occupied", monthly_rent: 14000, utility_rate: 1000 },
-    { room_number: "R2", property_id: "prop_3", status: "Vacant", monthly_rent: 14000, utility_rate: 1000 }
-  ],
-  tenants: [
-    {
-      tenant_id: "tenant_1",
-      full_name: "Collins Kosgei",
-      phone_number: "254712345678",
-      property_id: "prop_1",
-      assigned_room_number: "102",
-      registration_date: "2026-05-10" // Anniversary on 10th
-    },
-    {
-      tenant_id: "tenant_2",
-      full_name: "Jane Whitemore",
-      phone_number: "254789012345",
-      property_id: "prop_1",
-      assigned_room_number: "103",
-      registration_date: "2026-05-20" // Anniversary on 20th
-    },
-    {
-      tenant_id: "tenant_3",
-      full_name: "Kipchirchir Bett",
-      phone_number: "254722334455",
-      property_id: "prop_2",
-      assigned_room_number: "A1",
-      registration_date: "2026-06-05" // Anniversary on 5th
-    },
-    {
-      tenant_id: "tenant_4",
-      full_name: "Sarah Wanjiku",
-      phone_number: "254700998877",
-      property_id: "prop_3",
-      assigned_room_number: "R1",
-      registration_date: "2026-05-18" // Anniversary on 18th
-    }
-  ],
-  payments: [
-    // Collins cleared rent for his last billing cycles (May 10 - June 10)
-    {
-      transaction_id: "TX_MAN_101",
-      tenant_id: "tenant_1",
-      property_id: "prop_1",
-      amount: 19500, // Monthly Rent 18000 + Utilities 1500
-      status: "Completed",
-      timestamp: "2026-05-11T14:30:00.000Z",
-      payment_mode: "Manual"
-    },
-    // Jane made a partial payment on her current cycle
-    {
-      transaction_id: "TX_MPESA_202",
-      tenant_id: "tenant_2",
-      property_id: "prop_1",
-      amount: 15000, // Monthly Rent 22000 + Utilities 2000 = 24000 due. Left with 9,000 outstanding balance.
-      status: "Completed",
-      timestamp: "2026-05-22T09:15:00.000Z",
-      payment_mode: "M-PESA",
-      checkout_request_id: "ws_CO_demo_jane"
-    }
-  ],
-  maintenance: [
-    {
-      ticket_id: "tkt_1",
-      tenant_id: "tenant_1",
-      property_id: "prop_1",
-      issue_type: "Toilet",
-      description: "Water tank leaking onto floor when flushed",
-      status: "In Progress",
-      created_at: "2026-06-01T10:00:00.000Z"
-    },
-    {
-      ticket_id: "tkt_2",
-      tenant_id: "tenant_2",
-      property_id: "prop_1",
-      issue_type: "Bulb",
-      description: "Balcony light bulb burned state",
-      status: "Pending",
-      created_at: "2026-06-05T19:20:00.000Z"
-    }
-  ],
+  properties: [],
+  rooms: [],
+  tenants: [],
+  payments: [],
+  maintenance: [],
+  caretakers: [],
+  sms_logs: [],
+  room_requests: [],
   developer_contact: {
-    name: "Collins Kosgei",
-    phone: "254712345678",
-    email: "collinskosgei32@gmail.com",
-    background: "Collins is a verified information technology professional and a scientist, a full web developer with experience. For a good website call or WhatsApp Collins."
+    name: "",
+    phone: "",
+    email: "",
+    background: ""
   },
   owner_contact: {
-    name: "Onewee",
-    phone: "254711222333",
-    email: "onewee@kireu.com",
-    background: "Onewee of Kireu is the premier owner of Kireu modern verified assets, ensuring safety, reliability, and modern luxury standards."
+    name: "",
+    phone: "",
+    email: "",
+    background: ""
   },
   last_ready_timestamp: "2026-06-11T00:00:00.000Z"
 };
@@ -299,6 +195,29 @@ async function syncFromFirestore(): Promise<DBModel> {
       if (!firestoreDb.room_requests) firestoreDb.room_requests = [];
       if (!firestoreDb.developer_contact) firestoreDb.developer_contact = { ...INITIAL_DB.developer_contact };
       if (!firestoreDb.owner_contact) firestoreDb.owner_contact = { ...INITIAL_DB.owner_contact };
+
+      // Detect if the persistent database contains old seed data and purge it for a clean slate
+      const containsOldSeedData = firestoreDb.properties && firestoreDb.properties.some(p => p.property_id === "prop_1" || p.property_name === "Milimani Court");
+      if (containsOldSeedData) {
+        console.log("Old test database detected in Cloud Firestore. Purging all test data to start fresh on a clean slate...");
+        firestoreDb.properties = [];
+        firestoreDb.rooms = [];
+        firestoreDb.tenants = [];
+        firestoreDb.payments = [];
+        firestoreDb.maintenance = [];
+        firestoreDb.caretakers = [];
+        firestoreDb.sms_logs = [];
+        firestoreDb.room_requests = [];
+        firestoreDb.developer_contact = { name: "", phone: "", email: "", background: "" };
+        firestoreDb.owner_contact = { name: "", phone: "", email: "", background: "" };
+        firestoreDb.last_ready_timestamp = new Error().stack || new Date().toISOString(); // unique key/timestamp
+        
+        try {
+          fs.writeFileSync(DB_FILE, JSON.stringify(firestoreDb, null, 2));
+        } catch (e) {}
+        
+        await syncToFirestore(firestoreDb);
+      }
       
       if (dbInitialized) {
         // Once initialized, Firestore is ALWAYS our single master source of truth.
@@ -422,6 +341,27 @@ function readDB(): DBModel {
     if (!parsed.last_ready_timestamp) {
       parsed.last_ready_timestamp = "2026-06-11T00:00:00.000Z";
     }
+
+    // Detect if local disk DB has old seed data and purge it instantly
+    const containsOldSeedData = parsed.properties && parsed.properties.some(p => p.property_id === "prop_1" || p.property_name === "Milimani Court");
+    if (containsOldSeedData) {
+      console.log("Old test database detected on local disk. Purging all test data to start fresh on a clean slate...");
+      parsed.properties = [];
+      parsed.rooms = [];
+      parsed.tenants = [];
+      parsed.payments = [];
+      parsed.maintenance = [];
+      parsed.caretakers = [];
+      parsed.sms_logs = [];
+      parsed.room_requests = [];
+      parsed.developer_contact = { name: "", phone: "", email: "", background: "" };
+      parsed.owner_contact = { name: "", phone: "", email: "", background: "" };
+      parsed.last_ready_timestamp = new Date().toISOString();
+      try {
+        fs.writeFileSync(DB_FILE, JSON.stringify(parsed, null, 2));
+      } catch (e) {}
+    }
+
     cachedDb = parsed;
     return parsed;
   } catch (error) {
