@@ -432,7 +432,8 @@ function writeDB(data: DBModel) {
 
 // BILLING ENGINE: Computes current billing cycle dynamically
 // Outstanding Balance = (Monthly Rent + Utilities) - Total Cleared Payments Made within the current billing cycle
-function getBillingStatusForTenant(tenant: Tenant, db: DBModel, targetDate = new Date("2026-06-06T18:31:56Z")) {
+// Outstanding Balance = (Monthly Rent + Utilities) - Total Cleared Payments Made across all periods, with auto rollover of excess payments to future periods
+function getBillingStatusForTenant(tenant: Tenant, db: DBModel, targetDate = new Date()) {
   const room = db.rooms.find(
     (r) => r.property_id === tenant.property_id && r.room_number === tenant.assigned_room_number
   );
@@ -444,27 +445,22 @@ function getBillingStatusForTenant(tenant: Tenant, db: DBModel, targetDate = new
       status: "🟢 Paid",
       cycleLabel: "No Room Assigned",
       periodStart: "",
-      periodEnd: ""
+      periodEnd: "",
+      nextBillingDate: "",
+      nextBillingAmount: 0,
+      expectedNextPaymentDate: "N/A",
+      carryOverBalance: 0,
+      cyclesList: [],
+      totalPaid: 0
     };
   }
 
   const monthlyRent = room.monthly_rent;
   const utilityRate = room.utility_rate; // This represents the one-time, refundable Security Deposit / Maintenance Fee
 
-  // Compute cycle dates
+  // Compute cycle dates starting from the registration date of the tenant
   const regDate = new Date(tenant.registration_date);
   const regDay = regDate.getDate();
-
-  let cycleStartYear = targetDate.getFullYear();
-  let cycleStartMonth = targetDate.getMonth();
-
-  if (targetDate.getDate() < regDay) {
-    cycleStartMonth -= 1;
-    if (cycleStartMonth < 0) {
-      cycleStartMonth = 11;
-      cycleStartYear -= 1;
-    }
-  }
 
   const getSafeDate = (year: number, month: number, day: number) => {
     const d = new Date(year, month, day);
@@ -474,27 +470,93 @@ function getBillingStatusForTenant(tenant: Tenant, db: DBModel, targetDate = new
     return d;
   };
 
-  const cycleStart = getSafeDate(cycleStartYear, cycleStartMonth, regDay);
-  cycleStart.setHours(0, 0, 0, 0);
+  // Retrieve total COMPLETED payments made by the tenant
+  const allPayments = db.payments.filter(
+    (p) => p.tenant_id === tenant.tenant_id && p.status === "Completed"
+  );
+  const totalPaid = allPayments.reduce((sum, p) => sum + p.amount, 0);
 
-  const cycleEndMonth = cycleStartMonth + 1;
-  const cycleEndYear = cycleStartYear + (cycleEndMonth > 11 ? 1 : 0);
-  const cycleEnd = getSafeDate(cycleEndYear, cycleEndMonth % 12, regDay);
-  cycleEnd.setHours(0, 0, 0, 0);
+  let i = 0;
+  let remainingPayments = totalPaid;
+  const cyclesList = [];
+  const now = targetDate;
 
-  // Check if this is the tenant's first billing cycle of occupancy (deposit is only charged matching first month registration)
-  const isFirstCycle = (cycleStart.getFullYear() === regDate.getFullYear() && cycleStart.getMonth() === regDate.getMonth());
-  const totalBillable = isFirstCycle ? (monthlyRent + utilityRate) : monthlyRent;
+  // Generate all billing cycles from registration up to at least the current date, plus any prepaid cycles
+  while (true) {
+    const start = getSafeDate(regDate.getFullYear(), regDate.getMonth() + i, regDay);
+    start.setHours(0, 0, 0, 0);
+    const end = getSafeDate(regDate.getFullYear(), regDate.getMonth() + i + 1, regDay);
+    end.setHours(0, 0, 0, 0);
 
-  // Sum payments made STRICTLY in this current billing period (Completed status)
-  const paymentsInPeriod = db.payments.filter((p) => {
-    if (p.tenant_id !== tenant.tenant_id || p.status !== "Completed") return false;
-    const payTime = new Date(p.timestamp);
-    return payTime >= cycleStart && payTime < cycleEnd;
+    const bill = i === 0 ? (monthlyRent + utilityRate) : monthlyRent;
+    const allocated = Math.min(remainingPayments, bill);
+    remainingPayments -= allocated;
+    const isPaid = allocated === bill;
+
+    cyclesList.push({
+      index: i,
+      start: start.toISOString(),
+      end: end.toISOString(),
+      bill,
+      allocated,
+      isPaid,
+      outstanding: bill - allocated,
+    });
+
+    // Stop generating when:
+    // We have generated up to the current date's cycle AND there is no remaining balance to cover future cycles.
+    if (start > now && remainingPayments <= 0) {
+      break;
+    }
+    if (i > 120) break; // sanity safeguard
+    i++;
+  }
+
+  // Find the current cycle containing the target date
+  let currentCycleIndex = cyclesList.findIndex((c) => {
+    const s = new Date(c.start);
+    const e = new Date(c.end);
+    return now >= s && now < e;
   });
 
-  const clearedAmount = paymentsInPeriod.reduce((sum, p) => sum + p.amount, 0);
-  const outstandingBalance = Math.max(0, totalBillable - clearedAmount);
+  if (currentCycleIndex === -1) {
+    currentCycleIndex = 0;
+  }
+
+  const currentCycle = cyclesList[currentCycleIndex] || cyclesList[0];
+
+  const dueAmount = currentCycle.bill;
+  const clearedAmount = currentCycle.allocated;
+  const outstandingBalance = currentCycle.outstanding;
+
+  // Find the first cycle (past or future) that is not fully paid
+  const firstUnpaidCycle = cyclesList.find((c) => !c.isPaid);
+
+  let nextBillingDateStr = "";
+  let nextBillingAmount = 0;
+  let expectedNextPaymentDateFormatted = "";
+
+  if (firstUnpaidCycle) {
+    nextBillingDateStr = firstUnpaidCycle.start;
+    nextBillingAmount = firstUnpaidCycle.outstanding;
+    const fStart = new Date(firstUnpaidCycle.start);
+    expectedNextPaymentDateFormatted = fStart.toLocaleDateString("en-KE", {
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+    });
+  } else {
+    // If all generated cycles are fully paid (paid ahead), the next billing is the start of the next cycle
+    const lastGen = cyclesList[cyclesList.length - 1];
+    const nextStart = getSafeDate(regDate.getFullYear(), regDate.getMonth() + lastGen.index + 1, regDay);
+    nextBillingDateStr = nextStart.toISOString();
+    nextBillingAmount = monthlyRent;
+    expectedNextPaymentDateFormatted = nextStart.toLocaleDateString("en-KE", {
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+    });
+  }
 
   let status: "🟢 Paid" | "🟡 Partially Paid" | "🔴 Unpaid" = "🔴 Unpaid";
   if (outstandingBalance === 0) {
@@ -504,16 +566,24 @@ function getBillingStatusForTenant(tenant: Tenant, db: DBModel, targetDate = new
   }
 
   const fmtMonth = (d: Date) => d.toLocaleString("default", { month: "short" });
-  const cycleLabel = `${fmtMonth(cycleStart)} ${cycleStart.getDate()} - ${fmtMonth(cycleEnd)} ${cycleEnd.getDate()}`;
+  const startD = new Date(currentCycle.start);
+  const endD = new Date(currentCycle.end);
+  const cycleLabel = `${fmtMonth(startD)} ${startD.getDate()} - ${fmtMonth(endD)} ${endD.getDate()}`;
 
   return {
-    dueAmount: totalBillable,
+    dueAmount,
     clearedAmount,
     outstandingBalance,
     status,
     cycleLabel,
-    periodStart: cycleStart.toISOString(),
-    periodEnd: cycleEnd.toISOString()
+    periodStart: currentCycle.start,
+    periodEnd: currentCycle.end,
+    nextBillingDate: nextBillingDateStr,
+    nextBillingAmount,
+    expectedNextPaymentDate: expectedNextPaymentDateFormatted,
+    carryOverBalance: remainingPayments,
+    cyclesList,
+    totalPaid
   };
 }
 
@@ -880,16 +950,18 @@ app.post("/api/properties", (req, res) => {
     return res.status(400).json({ error: "Property name and geographic location are required." });
   }
 
-  const normName = property_name.trim().toLowerCase();
-  const normLoc = geographic_location.trim().toLowerCase();
+  const normName = property_name.trim().replace(/\s+/g, " ").toLowerCase();
+  const normLoc = geographic_location.trim().replace(/\s+/g, " ").toLowerCase();
 
   const isDuplicate = db.properties.some(p => 
-    p.property_name.trim().toLowerCase() === normName && 
-    p.geographic_location.trim().toLowerCase() === normLoc
+    p.property_name.trim().replace(/\s+/g, " ").toLowerCase() === normName && 
+    p.geographic_location.trim().replace(/\s+/g, " ").toLowerCase() === normLoc
   );
 
   if (isDuplicate) {
-    return res.status(400).json({ error: `A property named "${property_name.trim()}" at location "${geographic_location.trim()}" is already registered.` });
+    return res.status(400).json({ 
+      error: `Validation Error: A property named "${property_name.trim().replace(/\s+/g, " ")}" has already been registered at the location "${geographic_location.trim().replace(/\s+/g, " ")}". Please check outstanding plots.` 
+    });
   }
 
   const newProperty: Property = {

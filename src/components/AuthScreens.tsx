@@ -125,6 +125,8 @@ export default function AuthScreens({ properties, onAdminLogin, onTenantLogin }:
   const [fetchingVacantRooms, setFetchingVacantRooms] = useState(false);
   const [requestSuccess, setRequestSuccess] = useState<string | null>(null);
   const [requestError, setRequestError] = useState<string | null>(null);
+  const [isRequestSending, setIsRequestSending] = useState(false);
+  const [requestSentSuccess, setRequestSentSuccess] = useState(false);
 
   React.useEffect(() => {
     if (showRequestHouseModal) {
@@ -178,6 +180,7 @@ export default function AuthScreens({ properties, onAdminLogin, onTenantLogin }:
 
     setRequestError(null);
     setRequestSuccess(null);
+    setIsRequestSending(true);
 
     try {
       const response = await fetch("/api/room-requests", {
@@ -196,9 +199,17 @@ export default function AuthScreens({ properties, onAdminLogin, onTenantLogin }:
         throw new Error(data.error || "Failed to submit room request.");
       }
 
+      setRequestSentSuccess(true);
       setRequestSuccess("Your application has been filed successfully with the admin!");
       setRequestName("");
       setRequestPhone("");
+
+      // Return user to landing page after 3.2s
+      setTimeout(() => {
+        window.location.hash = "#/";
+        setIsRequestSending(false);
+        setRequestSentSuccess(false);
+      }, 3200);
       
       // Refresh list
       const vacRes = await fetch("/api/rooms/vacant");
@@ -207,6 +218,8 @@ export default function AuthScreens({ properties, onAdminLogin, onTenantLogin }:
         setVacantRooms(list);
       }
     } catch (err: any) {
+      setIsRequestSending(false);
+      setRequestSentSuccess(false);
       setRequestError(err.message || "An error occurred while filing the request.");
     }
   };
@@ -712,7 +725,55 @@ export default function AuthScreens({ properties, onAdminLogin, onTenantLogin }:
       {/* REQUEST A HOUSE / VACANT ROOM REQUEST MODAL */}
       {showRequestHouseModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-md animate-in fade-in duration-300">
-          <div className="w-full max-w-xl bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 space-y-6 relative max-h-[90vh] overflow-y-auto shadow-2xl text-left">
+          <div className="w-full max-w-xl bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 space-y-6 relative max-h-[90vh] overflow-y-auto shadow-2xl text-left overflow-hidden">
+            
+            {isRequestSending && (
+              <div className="absolute inset-0 bg-slate-950/98 flex flex-col items-center justify-center p-8 z-50 text-center animate-in fade-in duration-350">
+                {!requestSentSuccess ? (
+                  <div className="space-y-6">
+                    <div className="relative w-24 h-24 mx-auto flex items-center justify-center">
+                      <div className="absolute inset-0 rounded-full border-4 border-emerald-500/10 border-t-emerald-400 animate-spin" />
+                      <Building className="w-10 h-10 text-emerald-400 animate-pulse" />
+                    </div>
+                    <div className="space-y-2">
+                      <h3 className="text-sm font-bold uppercase tracking-widest text-emerald-400 font-mono animate-bounce">
+                        LODGING DIGITAL APPLICATION...
+                      </h3>
+                      <p className="text-xs text-slate-400 max-w-xs mx-auto font-sans leading-relaxed">
+                        Establishing secure connection with Kireu administrative directory to deposit room request...
+                      </p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-6 animate-in zoom-in duration-500">
+                    <div className="relative w-24 h-24 mx-auto flex items-center justify-center">
+                      <div className="absolute inset-0 rounded-full bg-emerald-500/15 animate-ping duration-1000" />
+                      <div className="absolute -inset-2 rounded-full border border-emerald-400/30 scale-100 animate-pulse" />
+                      <div className="w-16 h-16 rounded-full bg-emerald-500 flex items-center justify-center text-slate-950 shadow-lg shadow-emerald-500/30">
+                        <CheckCircle2 className="w-10 h-10 text-slate-950" />
+                      </div>
+                    </div>
+                    
+                    <div className="space-y-2">
+                      <h3 className="text-lg font-black font-display tracking-wider text-emerald-400 uppercase">
+                        APPLICATION SENT!
+                      </h3>
+                      <p className="text-xs text-slate-300 max-w-sm mx-auto leading-relaxed">
+                        Your housing application has been filed successfully. The executive directors have been notified.
+                      </p>
+                    </div>
+
+                    <div className="pt-4 flex flex-col items-center gap-1.5 font-mono text-[9px] uppercase tracking-widest text-slate-500">
+                      <span>Returning to Landing Desk...</span>
+                      <div className="w-32 h-1 bg-slate-800 rounded-full overflow-hidden">
+                        <div className="h-full bg-emerald-400" style={{ width: "100%", transition: "all 3.2s ease-out" }} />
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
             <div className="flex items-center justify-between border-b border-slate-800 pb-4">
               <div className="flex items-center gap-2.5">
                 <Building className="w-5.5 h-5.5 text-emerald-400" />

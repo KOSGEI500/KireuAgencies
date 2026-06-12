@@ -1668,26 +1668,6 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
             </>
           )}
 
-          <button
-            onClick={() => handleTabClick("contact_config")}
-            className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold rounded-lg transition-all text-left ${
-              activeTab === "contact_config" ? "sidebar-active text-white shadow-xs" : "text-slate-400 hover:text-white hover:bg-slate-800"
-            }`}
-          >
-            <Settings className="w-4 h-4 text-emerald-400" />
-            <span>Public Contact Config</span>
-          </button>
-
-          <button
-            onClick={() => handleTabClick("clock")}
-            className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold rounded-lg transition-all text-left ${
-              activeTab === "clock" ? "sidebar-active text-white shadow-xs" : "text-slate-400 hover:text-white hover:bg-slate-800"
-            }`}
-          >
-            <Clock className="w-4 h-4" />
-            <span>Clock Sync Auditor</span>
-          </button>
-
           {session.email?.toLowerCase().trim() === "collinskosgei32@gmail.com" && (
             <div className="space-y-1.5 pt-2 border-t border-slate-800/80">
               <div className="px-3 text-[10px] uppercase tracking-wider text-slate-500 font-bold flex items-center gap-1.5 pb-1">
@@ -1723,6 +1703,26 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
               >
                 <div className={`w-1.5 h-1.5 rounded-full ${activeTab === "developer_at" ? "bg-white" : "bg-emerald-400"}`} />
                 <span>Africa's Talking</span>
+              </button>
+
+              <button
+                onClick={() => handleTabClick("clock")}
+                className={`w-full flex items-center gap-2 px-3 py-1.5 text-[11px] font-semibold rounded-lg transition-all text-left pl-5 ${
+                  activeTab === "clock" ? "sidebar-active text-white bg-emerald-600 shadow-xs" : "text-emerald-400 hover:text-white hover:bg-slate-800"
+                }`}
+              >
+                <div className={`w-1.5 h-1.5 rounded-full ${activeTab === "clock" ? "bg-white" : "bg-emerald-400"}`} />
+                <span>Clock Sync Auditor</span>
+              </button>
+
+              <button
+                onClick={() => handleTabClick("contact_config")}
+                className={`w-full flex items-center gap-2 px-3 py-1.5 text-[11px] font-semibold rounded-lg transition-all text-left pl-5 ${
+                  activeTab === "contact_config" ? "sidebar-active text-white bg-emerald-600 shadow-xs" : "text-emerald-400 hover:text-white hover:bg-slate-800"
+                }`}
+              >
+                <div className={`w-1.5 h-1.5 rounded-full ${activeTab === "contact_config" ? "bg-white" : "bg-emerald-400"}`} />
+                <span>Public Contact Config</span>
               </button>
             </div>
           )}

@@ -1216,29 +1216,137 @@ Thank you for your prompt transaction. Please keep this slip for reference.
 
               </div>
 
-              {/* Status & Menu prompt helper */}
-              <div className="mt-8 pt-5 border-t border-white/5 flex flex-col sm:flex-row items-center justify-between gap-4 text-center sm:text-left">
+              {/* Dynamic highly polished visual Billing indicator */}
+              <div className="mt-8 pt-6 border-t border-white/5 space-y-6">
                 <div>
-                  <span className="text-[10px] text-slate-400 uppercase font-bold block mb-1">Current Balance Status</span>
+                  <h4 className="text-[10px] text-slate-400 uppercase font-bold tracking-widest font-mono mb-3">Expected Next Billing Status</h4>
                   {billingDetails ? (
-                    <div className="flex items-center gap-2 justify-center sm:justify-start">
-                      {getStatusBadge(billingDetails.status)}
-                      <span className="text-xs text-slate-400 font-mono">
-                        (Owed: KES {billingDetails.outstandingBalance?.toLocaleString() || "0"})
-                      </span>
+                    <div className="space-y-4 text-left">
+                      {/* Visual next payment condition */}
+                      {billingDetails.nextBillingAmount === 0 ? (
+                        <div className="p-4 rounded-2xl bg-gradient-to-r from-emerald-500/10 via-teal-500/10 to-transparent border border-emerald-500/20 flex flex-col sm:flex-row items-center gap-4 text-center sm:text-left">
+                          <div className="w-12 h-12 rounded-full bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center shrink-0">
+                            <Check className="w-6 h-6 text-emerald-405 animate-bounce" />
+                          </div>
+                          <div>
+                            <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2">
+                              <span className="text-xs font-bold text-emerald-400 uppercase tracking-wider font-mono">Status: Fully Cleared & Paid Ahead</span>
+                              {billingDetails.carryOverBalance > 0 && (
+                                <span className="text-[10px] bg-emerald-500 text-slate-950 font-extrabold px-1.5 py-0.5 rounded uppercase tracking-wider font-mono">
+                                  💎 Credit: KES {billingDetails.carryOverBalance.toLocaleString()}
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-xs text-slate-300 mt-1 leading-normal">
+                              Your account is fully cleared! Your next billing period is starting on <strong className="text-emerald-450 font-mono">{billingDetails.expectedNextPaymentDate}</strong> with expected recurring amount: <strong className="text-white font-mono">KES {billingDetails.nextBillingAmount?.toLocaleString()}</strong>
+                            </p>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="p-4 rounded-2xl bg-gradient-to-r from-amber-500/5 via-amber-200/5 to-transparent border border-amber-500/20 flex flex-col sm:flex-row items-center gap-4 text-center sm:text-left">
+                          <div className="w-12 h-12 rounded-full bg-amber-500/10 border border-amber-500/20 flex items-center justify-center shrink-0">
+                            <Hourglass className="w-6 h-6 text-amber-400 animate-pulse" />
+                          </div>
+                          <div className="grow">
+                            <span className="text-xs font-bold text-amber-405 uppercase tracking-wider font-mono block">Status: Next Payment Required</span>
+                            <p className="text-xs text-slate-300 mt-1 leading-normal">
+                              Remaining balance required is <strong className="text-amber-400 font-mono">KES {billingDetails.nextBillingAmount?.toLocaleString()}</strong>. Next billing cycle or expected payment date: <strong className="text-white font-mono">{billingDetails.expectedNextPaymentDate}</strong>
+                            </p>
+                            {/* Visual balance progress bar */}
+                            <div className="mt-3 max-w-sm">
+                              <div className="flex justify-between text-[9px] font-mono text-slate-400 mb-1">
+                                <span>CYCLES OVERVIEW</span>
+                                <span>{Math.round(((billingDetails.totalPaid - billingDetails.carryOverBalance) / (billingDetails.dueAmount || 1)) * 100) || 0}% PAID</span>
+                              </div>
+                              <div className="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden">
+                                <div className="h-full bg-amber-400 rounded-full" style={{ width: `${Math.min(100, Math.max(10, ((billingDetails.totalPaid - billingDetails.carryOverBalance) / (billingDetails.dueAmount || 1)) * 100))}%` }} />
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Visual Month-by-month billing cycle tracker */}
+                      {billingDetails.cyclesList && billingDetails.cyclesList.length > 0 && (
+                        <div className="space-y-3 pt-2">
+                          <span className="text-[9px] font-bold text-slate-450 uppercase tracking-widest font-mono block">Financial Allocation Ledger</span>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                            {billingDetails.cyclesList.map((cycle: any, index: number) => {
+                              const s = new Date(cycle.start);
+                              const cycleFmt = s.toLocaleDateString("en-KE", { month: "short", year: "numeric" });
+                              return (
+                                <div key={index} className={`p-3 rounded-xl border flex flex-col justify-between gap-2 transition-all ${
+                                  cycle.isPaid 
+                                    ? "bg-slate-900/40 border-emerald-550/20 text-emerald-350"
+                                    : cycle.allocated > 0
+                                      ? "bg-slate-900/40 border-amber-550/20 text-amber-350"
+                                      : "bg-slate-900/40 border-slate-800 text-slate-450"
+                                }`}>
+                                  <div className="flex justify-between items-start">
+                                    <div>
+                                      <span className="text-[9px] font-mono uppercase font-black block tracking-wider text-slate-500">Period #{cycle.index + 1} ({cycleFmt})</span>
+                                      <span className="text-xs text-white font-semibold block mt-0.5">
+                                        KES {cycle.bill.toLocaleString()}
+                                      </span>
+                                    </div>
+                                    <div className="shrink-0 pt-0.5">
+                                      {cycle.isPaid ? (
+                                        <div className="w-5 h-5 rounded-full bg-emerald-500/10 border border-emerald-500/25 flex items-center justify-center" title="Paid Complete">
+                                          <Check className="w-3 h-3 text-emerald-400" />
+                                        </div>
+                                      ) : cycle.allocated > 0 ? (
+                                        <div className="w-5 h-5 rounded-full bg-amber-500/10 border border-amber-500/25 flex items-center justify-center animate-pulse" title="Partially Covered">
+                                          <Hourglass className="w-3 h-3 text-amber-400" />
+                                        </div>
+                                      ) : (
+                                        <div className="w-5 h-5 rounded-full bg-slate-900 border border-slate-850 flex items-center justify-center" title="Awaiting Payment">
+                                          <AlertCircle className="w-3 h-3 text-slate-600" />
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+
+                                  <div className="space-y-1">
+                                    <div className="flex justify-between text-[8px] font-mono text-slate-450">
+                                      <span>Allocated: KES {cycle.allocated.toLocaleString()}</span>
+                                      <span>Rem: KES {cycle.outstanding.toLocaleString()}</span>
+                                    </div>
+                                    <div className="w-full h-1 bg-slate-800 rounded-full overflow-hidden">
+                                      <div className={`h-full ${cycle.isPaid ? "bg-emerald-400" : cycle.allocated > 0 ? "bg-amber-400" : "bg-slate-700"}`} style={{ width: `${(cycle.allocated / cycle.bill) * 100}%` }} />
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   ) : (
-                    <span className="text-xs text-slate-500 italic">No cycles calculated yet.</span>
+                    <span className="text-xs text-slate-500 italic">Calculating visual cycles timeline...</span>
                   )}
                 </div>
-                
-                <button
-                  onClick={() => setSidebarOpen(true)}
-                  className="px-5 py-2.5 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/25 text-emerald-400 font-bold font-sans text-xs rounded-xl flex items-center gap-2 transition-all cursor-pointer shadow-sm group active:scale-95"
-                >
-                  <Menu className="w-4 h-4 animate-pulse shrink-0" />
-                  <span>Open Resident Actions Portal</span>
-                </button>
+
+                <div className="pt-4 border-t border-white/5 flex flex-col sm:flex-row items-center justify-between gap-4 text-center sm:text-left">
+                  <div>
+                    <span className="text-[10px] text-slate-400 uppercase font-bold block mb-1 font-sans">Active Ledger Summary</span>
+                    {billingDetails ? (
+                      <span className="text-xs text-slate-350 font-mono block">
+                        (Active Balance: <strong className={billingDetails.outstandingBalance > 0 ? "text-amber-450" : "text-emerald-450"}>KES {billingDetails.outstandingBalance?.toLocaleString() || "0"}</strong>)
+                      </span>
+                    ) : (
+                      <span className="text-xs text-slate-500 italic block">No cycle calculations loaded.</span>
+                    )}
+                  </div>
+                  
+                  <button
+                    onClick={() => setSidebarOpen(true)}
+                    className="px-5 py-2.5 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/25 text-emerald-400 font-bold font-sans text-xs rounded-xl flex items-center gap-2 transition-all cursor-pointer shadow-sm group active:scale-95"
+                  >
+                    <Menu className="w-4 h-4 animate-pulse shrink-0" />
+                    <span>Open Resident Actions Portal</span>
+                  </button>
+                </div>
               </div>
 
             </div>
