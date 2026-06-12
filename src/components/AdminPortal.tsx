@@ -601,6 +601,9 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
   const [caretakerError, setCaretakerError] = useState<string | null>(null);
   const [caretakerSuccess, setCaretakerSuccess] = useState<string | null>(null);
   const [isSavingCaretaker, setIsSavingCaretaker] = useState(false);
+  const [isSavingProperty, setIsSavingProperty] = useState(false);
+  const [isSavingRoom, setIsSavingRoom] = useState(false);
+  const [isSavingTenant, setIsSavingTenant] = useState(false);
 
   // Clear balance Form
   const [manualPayTenantId, setManualPayTenantId] = useState("");
@@ -1039,6 +1042,7 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
     }
 
     setPropError(null);
+    setIsSavingProperty(true);
     try {
       const response = await fetch("/api/properties", {
         method: "POST",
@@ -1060,6 +1064,8 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
       alert("Property plot added successfully!");
     } catch (err: any) {
       setPropError(err.message || "Failed to catalog estate.");
+    } finally {
+      setIsSavingProperty(false);
     }
   };
 
@@ -1073,6 +1079,7 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
     }
 
     setRoomError(null);
+    setIsSavingRoom(true);
     try {
       const response = await fetch("/api/rooms", {
         method: "POST",
@@ -1105,6 +1112,8 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
       alert(data.message || "Apartment unit registered as Vacant.");
     } catch (err: any) {
       setRoomError(err.message || "Error creating unit.");
+    } finally {
+      setIsSavingRoom(false);
     }
   };
 
@@ -1159,6 +1168,7 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
       return;
     }
 
+    setIsSavingTenant(true);
     try {
       const response = await fetch("/api/tenants", {
         method: "POST",
@@ -1191,6 +1201,8 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
       onRefreshProperties();
     } catch (err: any) {
       setTenantError(err.message || "Error register tenant.");
+    } finally {
+      setIsSavingTenant(false);
     }
   };
 
@@ -2395,9 +2407,10 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
 
                     <button
                       type="submit"
-                      className="w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs uppercase rounded-xl transition-all cursor-pointer"
+                      disabled={isSavingRoom}
+                      className={`w-full py-2.5 text-white font-bold text-xs uppercase rounded-xl transition-all cursor-pointer ${isSavingRoom ? 'bg-slate-400 cursor-not-allowed' : 'bg-slate-900 hover:bg-slate-800'}`}
                     >
-                      Create New Room
+                      {isSavingRoom ? "Generating Unit..." : "Create New Room"}
                     </button>
                   </form>
                 </div>
@@ -2666,10 +2679,10 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
 
                 <button
                   type="submit"
-                  disabled={vacantRooms.length === 0}
-                  className="w-full py-2.5 bg-slate-900 disabled:bg-slate-200 hover:bg-slate-800 disabled:text-slate-450 text-white font-bold text-xs uppercase rounded-xl transition-all cursor-pointer"
+                  disabled={vacantRooms.length === 0 || isSavingTenant}
+                  className={`w-full py-2.5 font-bold text-xs uppercase rounded-xl transition-all cursor-pointer ${isSavingTenant ? 'bg-slate-400 text-white cursor-not-allowed' : 'bg-slate-900 disabled:bg-slate-200 hover:bg-slate-800 disabled:text-slate-450 text-white'}`}
                 >
-                  Occupy & Launch Lease
+                  {isSavingTenant ? "Configuring Lease..." : "Occupy & Launch Lease"}
                 </button>
               </form>
             </div>
@@ -3126,9 +3139,10 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
 
                 <button
                   type="submit"
-                  className="w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs uppercase rounded-xl transition-all cursor-pointer"
+                  disabled={isSavingProperty}
+                  className={`w-full py-2.5 font-bold text-xs uppercase rounded-xl transition-all cursor-pointer ${isSavingProperty ? 'bg-slate-400 text-white cursor-not-allowed' : 'bg-slate-900 hover:bg-slate-800 text-white'}`}
                 >
-                  Confirm Registration
+                  {isSavingProperty ? "Architecting Plot..." : "Confirm Registration"}
                 </button>
               </form>
             </div>

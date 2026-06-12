@@ -417,6 +417,7 @@ function writeDB(data: DBModel) {
   // Update modifications timestamp
   data.last_ready_timestamp = new Date().toISOString();
   cachedDb = data;
+  lastSyncTime = Date.now(); // Set lastSyncTime to prevent immediate background fetch from overwriting our new data
   try {
     fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2));
   } catch (error) {
@@ -526,7 +527,12 @@ app.use((req: any, res: any, next: any) => {
   const originalJson = res.json;
 
   const awaitWritesAndRespond = async (fn: Function, ...args: any[]) => {
-    if (activeSyncPromises.size > 0) {
+    const isWriteRequest = ["POST", "PUT", "DELETE"].includes(req.method);
+    const isVercelEnvironment = !!(process.env.VERCEL || process.env.NOW_RENDERING || process.env.AWS_LAMBDA_FUNCTION_NAME);
+
+    // Only block if we are in serverless mode on write operations, because standard continuous containers
+    // compile writes in the background and do not immediately sleep/freeze.
+    if (isVercelEnvironment && isWriteRequest && activeSyncPromises.size > 0) {
       console.log(`[Vercel Serverless Protection] Delaying response for ${activeSyncPromises.size} active Firestore operations...`);
       try {
         await Promise.all(Array.from(activeSyncPromises));
@@ -554,11 +560,10 @@ app.use((req: any, res: any, next: any) => {
 const ensureDbReady = async (req: any, res: any, next: any) => {
   const now = Date.now();
   
-  // If we are uninitialized OR our cache has expired (stale after 3 seconds)
-  if (!dbInitialized || (now - lastSyncTime > CACHE_TTL)) {
+  if (!dbInitialized) {
+    // If the database is not initialized at all, we MUST wait for the very first fetch to avoid serving empty data
     try {
       if (!lastFetchPromise) {
-        // Trigger a fresh sync from Firestore
         lastFetchPromise = (async () => {
           try {
             const db = await syncFromFirestore();
@@ -571,7 +576,23 @@ const ensureDbReady = async (req: any, res: any, next: any) => {
       }
       await lastFetchPromise;
     } catch (err) {
-      console.error("Database synchronization failed during middleware path:", err);
+      console.error("Database synchronization failed during boot path:", err);
+    }
+  } else if (now - lastSyncTime > CACHE_TTL) {
+    // If we have already initialized, we do not need to block active GET requests while updating the cache from Firestore.
+    // Trigger the fetch in the background as an async task so that the current request completes instantly.
+    if (!lastFetchPromise) {
+      lastFetchPromise = (async () => {
+        try {
+          const db = await syncFromFirestore();
+          lastSyncTime = Date.now();
+          return db;
+        } catch (err) {
+          console.error("Background Firestore sync failed:", err);
+        } finally {
+          lastFetchPromise = null;
+        }
+      })();
     }
   }
   next();
@@ -857,6 +878,18 @@ app.post("/api/properties", (req, res) => {
   
   if (!property_name || !geographic_location) {
     return res.status(400).json({ error: "Property name and geographic location are required." });
+  }
+
+  const normName = property_name.trim().toLowerCase();
+  const normLoc = geographic_location.trim().toLowerCase();
+
+  const isDuplicate = db.properties.some(p => 
+    p.property_name.trim().toLowerCase() === normName && 
+    p.geographic_location.trim().toLowerCase() === normLoc
+  );
+
+  if (isDuplicate) {
+    return res.status(400).json({ error: `A property named "${property_name.trim()}" at location "${geographic_location.trim()}" is already registered.` });
   }
 
   const newProperty: Property = {
