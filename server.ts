@@ -1527,7 +1527,7 @@ app.post("/api/auth/admin/google-login", (req, res) => {
     }
 
     return res.status(403).json({
-      error: "Access Denied: Unregistered account. Please contact the administrator for authorized access."
+      error: "Access Denied. Contact Admin."
     });
   } catch (err: any) {
     console.error("Internal server error during Google login validation:", err);
@@ -1535,14 +1535,18 @@ app.post("/api/auth/admin/google-login", (req, res) => {
   }
 });
 
+function normalizePin(p: string): string {
+  if (!p) return "";
+  return p.toUpperCase().replace(/[^A-Z0-9]/g, "").trim();
+}
+
 app.post("/api/auth/admin/login", (req, res) => {
   const { role, pin, property_id } = req.body;
-  const sanitizedPin = pin ? pin.trim().replace(/^[,.:;\s]+|[,.:;\s]+$/g, "") : "";
-  const normalizedPin = sanitizedPin.toUpperCase();
+  const queryPinNormal = normalizePin(pin);
 
   if (role === "Super-Admin") {
     const db = readDB();
-    const matchedAdmin = db.admins?.find(a => a.pin.trim().toUpperCase() === normalizedPin);
+    const matchedAdmin = db.admins?.find(a => normalizePin(a.pin) === queryPinNormal);
     if (matchedAdmin) {
       return res.json({
         success: true,
@@ -1554,7 +1558,7 @@ app.post("/api/auth/admin/login", (req, res) => {
       });
     }
 
-    if (normalizedPin === "KIREU-COLLINS-32") {
+    if (queryPinNormal === normalizePin("KIREU-COLLINS-32")) {
       return res.json({
         success: true,
         session: {
@@ -1565,7 +1569,7 @@ app.post("/api/auth/admin/login", (req, res) => {
       });
     }
 
-    if (normalizedPin === "KIREU-EXEC-11") {
+    if (queryPinNormal === normalizePin("KIREU-EXEC-11")) {
       return res.json({
         success: true,
         session: {

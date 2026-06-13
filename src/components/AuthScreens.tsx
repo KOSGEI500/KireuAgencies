@@ -388,11 +388,11 @@ export default function AuthScreens({ properties, onAdminLogin, onTenantLogin }:
           data = JSON.parse(responseText);
         }
       } catch (parseErr) {
-        data = { error: "Access Denied: You are not authorized or registered on this system." };
+        data = { error: "Access Denied. Contact Admin." };
       }
 
       if (!response.ok) {
-        throw new Error(data.error || "Access Denied: You are not authorized or registered on this system.");
+        throw new Error(data.error || "Access Denied. Contact Admin.");
       }
 
       onAdminLogin(data.session);
@@ -465,7 +465,7 @@ export default function AuthScreens({ properties, onAdminLogin, onTenantLogin }:
       } else if (err.code === "auth/popup-blocked") {
         setError("The authentication popup was blocked by your browser. Please enable popups for this estate dashboard.");
       } else {
-        setError(err.message || "Access Denied: Only authorized directors are granted Google sign-in rights.");
+        setError(err.message || "Access Denied. Contact Admin.");
       }
     } finally {
       setLoading(false);
@@ -494,11 +494,7 @@ export default function AuthScreens({ properties, onAdminLogin, onTenantLogin }:
             </div>
           </div>
           
-          <nav className="hidden md:flex space-x-6">
-            <span onClick={() => { window.location.hash = "#/request-house"; }} className="text-xs font-semibold text-slate-350 hover:text-white transition-all cursor-pointer font-mono uppercase tracking-wider">Properties</span>
-            <span onClick={() => { window.location.hash = "#/request-house"; }} className="text-xs font-semibold text-slate-350 hover:text-white transition-all cursor-pointer font-mono uppercase tracking-wider">About Us</span>
-            <span onClick={() => { window.location.hash = "#/contact"; }} className="text-xs font-semibold text-slate-350 hover:text-emerald-400 transition-all cursor-pointer font-mono uppercase tracking-wider font-bold">Contact</span>
-          </nav>
+          {/* Properties, About Us, Contact options removed from header desktop view as requested */}
 
           {currentPage === "landing" ? (
             <button 

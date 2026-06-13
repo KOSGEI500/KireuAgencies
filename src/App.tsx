@@ -19,6 +19,15 @@ export default function App() {
   const [themeMode, setThemeMode] = useState<"dark" | "light">("dark");
   const [highContrast, setHighContrast] = useState(false);
   const [dyslexicFont, setDyslexicFont] = useState(false);
+  const [currentHash, setCurrentHash] = useState(window.location.hash);
+
+  useEffect(() => {
+    const handleHash = () => {
+      setCurrentHash(window.location.hash);
+    };
+    window.addEventListener("hashchange", handleHash);
+    return () => window.removeEventListener("hashchange", handleHash);
+  }, []);
 
   useEffect(() => {
     fetchProperties();
@@ -246,8 +255,16 @@ export default function App() {
     dyslexicFont && "app-dyslexic",
   ].filter(Boolean).join(" ");
 
+  const isGlobalStatic = !adminSession && !tenantSession && (
+    currentHash === "#/login" || 
+    currentHash === "#/request-house" || 
+    currentHash === "#/contact" || 
+    currentHash === "#/terms" || 
+    currentHash === "#/privacy"
+  );
+
   return (
-    <div className={`min-h-screen bg-slate-950 text-slate-100 relative font-sans selection:bg-blue-500 selection:text-white overflow-x-hidden ${accessibilityClasses}`}>
+    <div className={`min-h-screen bg-slate-950 text-slate-100 relative font-sans selection:bg-blue-500 selection:text-white ${isGlobalStatic ? "h-screen overflow-hidden" : "overflow-x-hidden"} ${accessibilityClasses}`}>
       
       {/* Inject complete stylesheet for Accessibility styles */}
       <style>{`

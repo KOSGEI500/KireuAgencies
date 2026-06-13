@@ -74,17 +74,28 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
   const [expandedPaidTenantId, setExpandedPaidTenantId] = useState<string | null>(null);
 
   // Tab State with "clock" view support
-  const [activeTab, setActiveTab] = useState<"dashboard" | "rooms" | "tenants" | "payments" | "maintenance" | "properties" | "clock" | "caretakers" | "sms" | "requests" | "developer_google" | "developer_admins" | "developer_mpesa" | "developer_at" | "contact_config">("dashboard");
+  const [activeTab, setActiveTab] = useState<"dashboard" | "rooms" | "tenants" | "payments" | "maintenance" | "properties" | "clock" | "caretakers" | "sms" | "requests" | "developer_google" | "developer_admins" | "developer_mpesa" | "developer_at" | "contact_config" | "developer_root">("dashboard");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [developerSubTab, setDeveloperSubTab] = useState<"admins" | "google" | "mpesa" | "at" | "clock" | "contact">("admins");
 
   useEffect(() => {
     const handleAdminHashChange = () => {
       const hash = window.location.hash;
       if (hash.startsWith("#/admin/")) {
         const tab = hash.replace("#/admin/", "") as any;
-        const validTabs = ["dashboard", "rooms", "tenants", "payments", "maintenance", "properties", "clock", "caretakers", "sms", "requests", "developer_google", "developer_admins", "developer_mpesa", "developer_at", "contact_config"];
+        const validTabs = ["dashboard", "rooms", "tenants", "payments", "maintenance", "properties", "clock", "caretakers", "sms", "requests", "developer_google", "developer_admins", "developer_mpesa", "developer_at", "contact_config", "developer_root"];
         if (validTabs.includes(tab)) {
-          setActiveTab(tab);
+          if (["developer_google", "developer_admins", "developer_mpesa", "developer_at", "contact_config", "clock"].includes(tab)) {
+            setActiveTab("developer_root");
+            if (tab === "developer_google") setDeveloperSubTab("google");
+            else if (tab === "developer_admins") setDeveloperSubTab("admins");
+            else if (tab === "developer_mpesa") setDeveloperSubTab("mpesa");
+            else if (tab === "developer_at") setDeveloperSubTab("at");
+            else if (tab === "contact_config") setDeveloperSubTab("contact");
+            else if (tab === "clock") setDeveloperSubTab("clock");
+          } else {
+            setActiveTab(tab);
+          }
         }
       } else if (hash === "#/admin") {
         setActiveTab("dashboard");
@@ -122,6 +133,7 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
   const [adminSuccessMsg, setAdminSuccessMsg] = useState("");
   const [adminErrorMsg, setAdminErrorMsg] = useState("");
   const [loadingAdmins, setLoadingAdmins] = useState(false);
+  const [adminToRevoke, setAdminToRevoke] = useState<string | null>(null);
 
   const fetchAdmins = async () => {
     setLoadingAdmins(true);
@@ -168,10 +180,7 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
 
   const handleDeleteAdmin = async (email: string) => {
     if (email === "collinskosgei32@gmail.com") {
-      alert("You cannot remove the developer email!");
-      return;
-    }
-    if (!window.confirm(`Are you sure you want to remove ${email} from Super-Admins?`)) {
+      setAdminErrorMsg("You cannot remove the developer email!");
       return;
     }
     setLoadingAdmins(true);
@@ -183,8 +192,9 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
       });
       const data = await response.json();
       if (response.ok) {
-        setAdminSuccessMsg("Super-Admin successfully deleted.");
+        setAdminSuccessMsg("Super-Admin permission successfully suspended/revoked.");
         setAdminList(data.admins);
+        setAdminToRevoke(null);
       } else {
         setAdminErrorMsg(data.error || "Failed to delete super admin.");
       }
@@ -251,10 +261,15 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
     }
   };
 
-  const handleTabClick = (tab: "dashboard" | "rooms" | "tenants" | "payments" | "maintenance" | "properties" | "clock" | "caretakers" | "sms" | "requests" | "developer_google" | "developer_admins" | "developer_mpesa" | "developer_at" | "contact_config") => {
+  const handleTabClick = (tab: "dashboard" | "rooms" | "tenants" | "payments" | "maintenance" | "properties" | "clock" | "caretakers" | "sms" | "requests" | "developer_google" | "developer_admins" | "developer_mpesa" | "developer_at" | "contact_config" | "developer_root") => {
     window.location.hash = `#/admin/${tab}`;
     setMobileMenuOpen(false);
+    window.scrollTo(0, 0);
   };
+
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [activeTab]);
 
   // Live clock and synchronization trails
   const [currentTime, setCurrentTime] = useState(new Date());
@@ -608,10 +623,10 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
   }, [activeTab, session.email]);
 
   useEffect(() => {
-    if (activeTab === "developer_admins" && session.email?.toLowerCase().trim() === "collinskosgei32@gmail.com") {
+    if ((activeTab === "developer_admins" || activeTab === "developer_root") && session.email?.toLowerCase().trim() === "collinskosgei32@gmail.com") {
       fetchAdmins();
     }
-  }, [activeTab, session.email]);
+  }, [activeTab, developerSubTab, session.email]);
 
   const handleUpdateDevConfig = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -633,11 +648,12 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
       const resData = await response.json();
       if (response.ok) {
         let label = "Developer settings updated successfully!";
-        if (activeTab === "developer_google") {
+        const currentTarget = activeTab === "developer_root" ? developerSubTab : activeTab.replace("developer_", "");
+        if (currentTarget === "google" || currentTarget === "firebase") {
           label = "Google Firestore keys updated successfully! Connected to database ID: " + devConfig.firestoreDatabaseId + ".";
-        } else if (activeTab === "developer_mpesa") {
+        } else if (currentTarget === "mpesa") {
           label = "Safaricom M-Pesa client keys updated successfully! Shortcode active: " + devConfig.mpesaShortcode + ".";
-        } else if (activeTab === "developer_at") {
+        } else if (currentTarget === "at") {
           label = "Africa's Talking SMS credentials updated successfully! Username active: " + devConfig.atUsername + ".";
         }
         setDevStatus({ 
@@ -1762,63 +1778,13 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
               </div>
               
               <button
-                onClick={() => handleTabClick("developer_google")}
-                className={`w-full flex items-center gap-2 px-3 py-1.5 text-[11px] font-semibold rounded-lg transition-all text-left pl-5 ${
-                  activeTab === "developer_google" ? "sidebar-active text-white bg-emerald-600 shadow-xs" : "text-emerald-400 hover:text-white hover:bg-slate-800"
+                onClick={() => handleTabClick("developer_root")}
+                className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold rounded-lg transition-all text-left ${
+                  activeTab === "developer_root" ? "sidebar-active text-white bg-emerald-600 shadow-xs animate-pulse" : "text-emerald-400 hover:text-white hover:bg-slate-800"
                 }`}
               >
-                <div className={`w-1.5 h-1.5 rounded-full ${activeTab === "developer_google" ? "bg-white" : "bg-emerald-400"}`} />
-                <span>Google Firestore</span>
-              </button>
-
-              <button
-                onClick={() => handleTabClick("developer_mpesa")}
-                className={`w-full flex items-center gap-2 px-3 py-1.5 text-[11px] font-semibold rounded-lg transition-all text-left pl-5 ${
-                  activeTab === "developer_mpesa" ? "sidebar-active text-white bg-emerald-600 shadow-xs" : "text-emerald-400 hover:text-white hover:bg-slate-800"
-                }`}
-              >
-                <div className={`w-1.5 h-1.5 rounded-full ${activeTab === "developer_mpesa" ? "bg-white" : "bg-emerald-400"}`} />
-                <span>M-Pesa API</span>
-              </button>
-
-              <button
-                onClick={() => handleTabClick("developer_at")}
-                className={`w-full flex items-center gap-2 px-3 py-1.5 text-[11px] font-semibold rounded-lg transition-all text-left pl-5 ${
-                  activeTab === "developer_at" ? "sidebar-active text-white bg-emerald-600 shadow-xs" : "text-emerald-400 hover:text-white hover:bg-slate-800"
-                }`}
-              >
-                <div className={`w-1.5 h-1.5 rounded-full ${activeTab === "developer_at" ? "bg-white" : "bg-emerald-400"}`} />
-                <span>Africa's Talking</span>
-              </button>
-
-              <button
-                onClick={() => handleTabClick("clock")}
-                className={`w-full flex items-center gap-2 px-3 py-1.5 text-[11px] font-semibold rounded-lg transition-all text-left pl-5 ${
-                  activeTab === "clock" ? "sidebar-active text-white bg-emerald-600 shadow-xs" : "text-emerald-400 hover:text-white hover:bg-slate-800"
-                }`}
-              >
-                <div className={`w-1.5 h-1.5 rounded-full ${activeTab === "clock" ? "bg-white" : "bg-emerald-400"}`} />
-                <span>Clock Sync Auditor</span>
-              </button>
-
-              <button
-                onClick={() => handleTabClick("contact_config")}
-                className={`w-full flex items-center gap-2 px-3 py-1.5 text-[11px] font-semibold rounded-lg transition-all text-left pl-5 ${
-                  activeTab === "contact_config" ? "sidebar-active text-white bg-emerald-600 shadow-xs" : "text-emerald-400 hover:text-white hover:bg-slate-800"
-                }`}
-              >
-                <div className={`w-1.5 h-1.5 rounded-full ${activeTab === "contact_config" ? "bg-white" : "bg-emerald-400"}`} />
-                <span>Public Contact Config</span>
-              </button>
-
-              <button
-                onClick={() => handleTabClick("developer_admins")}
-                className={`w-full flex items-center gap-2 px-3 py-1.5 text-[11px] font-semibold rounded-lg transition-all text-left pl-5 ${
-                  activeTab === "developer_admins" ? "sidebar-active text-white bg-emerald-600 shadow-xs" : "text-emerald-400 hover:text-white hover:bg-slate-800"
-                }`}
-              >
-                <div className={`w-1.5 h-1.5 rounded-full ${activeTab === "developer_admins" ? "bg-white" : "bg-emerald-400"}`} />
-                <span>Manage Super-Admins</span>
+                <Database className="w-4 h-4 text-emerald-400 shrink-0" />
+                <span>Root Developer Panel</span>
               </button>
             </div>
           )}
@@ -3887,9 +3853,73 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
           </div>
         )}
 
-        {/* 8. SYSTEM SYNC CLOCK AUDITOR TAB */}
-        {activeTab === "clock" && (
-          <div className="space-y-6 text-left">
+        {/* ROOT DEVELOPER PANEL PAGE */}
+        {activeTab === "developer_root" && session.email?.toLowerCase().trim() === "collinskosgei32@gmail.com" && (
+          <div className="space-y-6 text-left animate-in fade-in duration-200">
+            {/* Horizontal subtabs navbar */}
+            <div className="bg-slate-900 rounded-3xl p-6 sm:p-8 text-white relative overflow-hidden border border-slate-800 shadow-xl mb-6">
+              <div className="absolute top-0 right-0 w-96 h-96 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none"></div>
+              
+              <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6 relative z-10 font-sans">
+                <div className="space-y-2">
+                  <div className="inline-flex items-center gap-2 px-3 py-1 bg-emerald-500/15 rounded-full border border-emerald-500/20 text-emerald-400 font-mono text-[10px] font-bold uppercase tracking-wider">
+                    <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-ping"></span>
+                    ROOT SYSTEM COGNIZANCE CONTROL
+                  </div>
+                  <h2 className="text-2xl font-extrabold font-display tracking-tight text-white flex items-center gap-2">
+                    <Shield className="w-6 h-6 text-emerald-400 shrink-0" />
+                    <span>Root Developer Control Panel</span>
+                  </h2>
+                  <p className="text-slate-400 text-xs max-w-xl leading-relaxed">
+                    This dedicated panel houses all Google project resources, active database gateways, Safaricom M-Pesa APIs, Africa's Talking integrations, public administrative contacts, and secondary Super-Admins.
+                  </p>
+                </div>
+
+                <div className="p-4 bg-slate-800/80 backdrop-blur-md rounded-2xl border border-slate-700/50 text-center min-w-[200px]">
+                  <span className="text-[10px] uppercase font-bold text-slate-400 tracking-widest block mb-1">STANDARD GMT+3 UTC</span>
+                  <div className="font-mono text-2xl font-black text-emerald-400 tracking-wider">
+                    {currentTime.toLocaleTimeString()}
+                  </div>
+                  <span className="text-[9px] text-slate-500 font-mono block mt-1.5">Epoch: {currentTime.getTime()}</span>
+                </div>
+              </div>
+
+              {/* Horizontal subpills menu bar */}
+              <div className="mt-8 relative z-10 flex flex-wrap gap-2 border-t border-slate-800/80 pt-6">
+                {[
+                  { id: "admins", label: "Manage Super-Admins", icon: Users },
+                  { id: "google", label: "Google Firebase", icon: Database },
+                  { id: "mpesa", label: "M-Pesa API Gate", icon: Smartphone },
+                  { id: "at", label: "Africa's Talking SMS", icon: MessageSquare },
+                  { id: "contact", label: "Public Contacts Config", icon: Settings },
+                  { id: "clock", label: "System Sync Auditor", icon: Clock },
+                ].map((subTab) => {
+                  const SubIcon = subTab.icon;
+                  const isActive = developerSubTab === subTab.id;
+                  return (
+                    <button
+                      key={subTab.id}
+                      onClick={() => {
+                        setDeveloperSubTab(subTab.id as any);
+                        window.scrollTo(0, 0);
+                      }}
+                      className={`flex items-center gap-2 px-3 py-2 font-bold text-[10px] rounded-xl transition-all cursor-pointer uppercase tracking-wider ${
+                        isActive 
+                          ? "bg-emerald-600 text-white shadow-md border border-emerald-500/20"
+                          : "bg-slate-800/60 text-emerald-400 hover:text-white hover:bg-slate-800"
+                      }`}
+                    >
+                      <SubIcon className={`w-3.5 h-3.5 ${isActive ? "text-white animate-pulse" : "text-emerald-400"}`} />
+                      <span>{subTab.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Inner Segment Content based on developerSubTab */}
+            {developerSubTab === "clock" && (
+              <div className="space-y-6 text-left animate-in fade-in duration-200">
             <div className="bg-slate-900 rounded-3xl p-6 sm:p-8 text-white relative overflow-hidden border border-slate-800 shadow-xl">
               <div className="absolute top-0 right-0 w-96 h-96 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none"></div>
               
@@ -3988,9 +4018,9 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
           </div>
         )}
 
-        {/* 9. DEVELOPER GOOGLE FIRESTORE KEYS TAB */}
-        {activeTab === "developer_google" && session.email?.toLowerCase().trim() === "collinskosgei32@gmail.com" && (
-          <div className="space-y-6 text-left animate-in fade-in duration-200">
+        {/* Dynamic Sub-Tab view */}
+        {developerSubTab === "google" && (
+              <div className="space-y-6 text-left animate-in fade-in duration-200">
             <div className="bg-slate-900 rounded-3xl p-6 sm:p-8 text-white relative overflow-hidden border border-slate-800 shadow-xl">
               <div className="absolute top-0 right-0 w-96 h-96 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none"></div>
               
@@ -4514,9 +4544,8 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
           </div>
         )}
 
-        {/* 10. DEVELOPER MPESA KEYS TAB */}
-        {activeTab === "developer_mpesa" && session.email?.toLowerCase().trim() === "collinskosgei32@gmail.com" && (
-          <div className="space-y-6 text-left animate-in fade-in duration-200">
+        {developerSubTab === "mpesa" && (
+              <div className="space-y-6 text-left animate-in fade-in duration-200">
             <div className="bg-slate-900 rounded-3xl p-6 sm:p-8 text-white relative overflow-hidden border border-slate-800 shadow-xl">
               <div className="absolute top-0 right-0 w-96 h-96 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none"></div>
               
@@ -4637,9 +4666,8 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
           </div>
         )}
 
-        {/* 11. DEVELOPER AT KEYS TAB */}
-        {activeTab === "developer_at" && session.email?.toLowerCase().trim() === "collinskosgei32@gmail.com" && (
-          <div className="space-y-6 text-left animate-in fade-in duration-200">
+        {developerSubTab === "at" && (
+              <div className="space-y-6 text-left animate-in fade-in duration-200">
             <div className="bg-slate-900 rounded-3xl p-6 sm:p-8 text-white relative overflow-hidden border border-slate-800 shadow-xl">
               <div className="absolute top-0 right-0 w-96 h-96 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none"></div>
               
@@ -4736,9 +4764,8 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
           </div>
         )}
 
-        {/* 12. PUBLIC CONTACTS CONFIGURATION TAB */}
-        {activeTab === "contact_config" && (
-          <div className="space-y-6 text-left animate-in fade-in duration-200">
+        {developerSubTab === "contact" && (
+              <div className="space-y-6 text-left animate-in fade-in duration-200">
             <div className="bg-slate-900 rounded-3xl p-6 sm:p-8 text-white relative overflow-hidden border border-slate-800 shadow-xl">
               <div className="absolute top-0 right-0 w-96 h-96 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none"></div>
               
@@ -5092,9 +5119,8 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
           </div>
         )}
 
-        {/* 13. DYNAMIC SUPER-ADMINS CONFIGURATION TAB */}
-        {activeTab === "developer_admins" && (
-          <div className="space-y-6 text-left animate-in fade-in duration-200">
+            {developerSubTab === "admins" && (
+              <div className="space-y-6 text-left animate-in fade-in duration-200">
             <div className="bg-slate-900 rounded-3xl p-6 sm:p-8 text-white relative overflow-hidden border border-slate-800 shadow-xl">
               <div className="absolute top-0 right-0 w-96 h-96 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none"></div>
               
@@ -5245,10 +5271,27 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
                                 <span className="text-[10px] text-slate-400/80 font-bold uppercase tracking-wider select-none pr-2">
                                   System Protected
                                 </span>
+                              ) : adminToRevoke === admin.email ? (
+                                <div className="flex justify-end gap-1.5 items-center">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteAdmin(admin.email)}
+                                    className="px-2.5 py-1 bg-red-600 hover:bg-red-700 text-white rounded-lg text-[9px] uppercase font-serif tracking-wider transition-all cursor-pointer shadow-sm border border-red-500"
+                                  >
+                                    Confirm
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setAdminToRevoke(null)}
+                                    className="px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-600 border border-slate-250 rounded-lg text-[9px] uppercase font-bold transition-all cursor-pointer"
+                                  >
+                                    Cancel
+                                  </button>
+                                </div>
                               ) : (
                                 <button
                                   type="button"
-                                  onClick={() => handleDeleteAdmin(admin.email)}
+                                  onClick={() => setAdminToRevoke(admin.email)}
                                   className="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 hover:text-rose-700 text-rose-600 border border-rose-100 rounded-lg text-[10px] uppercase font-extrabold transition-all cursor-pointer"
                                   title="Revoke Admin Permission permanent"
                                 >
@@ -5264,6 +5307,8 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
                 )}
               </div>
             </div>
+            </div>
+            )}
           </div>
         )}
 
