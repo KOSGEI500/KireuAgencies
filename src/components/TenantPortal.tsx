@@ -94,6 +94,29 @@ export default function TenantPortal({ tenant, property, onLogout, onOpenSetting
   const [pendingCheckoutId, setPendingCheckoutId] = useState<string | null>(null);
   const [paymentError, setPaymentError] = useState<string | null>(null);
   const [paymentSuccess, setPaymentSuccess] = useState<string | null>(null);
+  const [stkCountdown, setStkCountdown] = useState(60);
+
+  useEffect(() => {
+    let timer: NodeJS.Timeout;
+    if (pendingCheckoutId) {
+      setStkCountdown(60);
+      timer = setInterval(() => {
+        setStkCountdown((prev) => {
+          if (prev <= 1) {
+            clearInterval(timer);
+            setPaymentError("STK Push transaction timed out after 60 seconds without PIN entry.");
+            setPendingCheckoutId(null);
+            setPaying(false);
+            return 60;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    } else {
+      setStkCountdown(60);
+    }
+    return () => clearInterval(timer);
+  }, [pendingCheckoutId]);
 
   // Ticket Form
   const [issueType, setIssueType] = useState<"Bulb" | "Socket" | "Toilet" | "Paint" | "Other">("Bulb");
@@ -1793,6 +1816,186 @@ Thank you for your prompt transaction. Please keep this slip for reference.
         )}
 
       </main>
+
+      {/* EXTREMELY RESPONSIVE M-PESA STK PROGRESS MODAL/OVERLAY */}
+      {(paying || !!pendingCheckoutId || !!paymentSuccess || !!paymentError) && (
+        <div id="mpesa-stk-portal-modal" className="fixed inset-0 bg-slate-950/85 backdrop-blur-xl z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-emerald-500/30 rounded-3xl p-6 sm:p-8 max-w-md w-full text-center shadow-2xl relative overflow-hidden animate-in zoom-in-95 duration-250 font-sans">
+            {/* Ambient Background Glow */}
+            <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-500/10 rounded-full blur-2xl pointer-events-none" />
+            <div className="absolute bottom-0 left-0 w-32 h-32 bg-teal-500/10 rounded-full blur-2xl pointer-events-none" />
+
+            {/* Cancel/Dismiss Icon Button */}
+            <button
+              onClick={() => {
+                setPaying(false);
+                setPendingCheckoutId(null);
+                setPaymentSuccess(null);
+                setPaymentError(null);
+              }}
+              className="absolute top-4 right-4 text-slate-400 hover:text-white bg-slate-800/50 hover:bg-slate-800 p-2 rounded-full transition-all cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
+
+            {/* Content Switcher depending on STK Push State */}
+            {paymentSuccess ? (
+              // 1. Success Stage
+              <div className="space-y-4 pt-2">
+                <div className="w-16 h-16 bg-emerald-500/15 border border-emerald-500/40 rounded-full flex items-center justify-center mx-auto text-emerald-450 animate-bounce">
+                  <Check className="w-8 h-8" />
+                </div>
+                <div>
+                  <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-widest font-mono bg-emerald-950/50 border border-emerald-500/20 px-2 rounded-full py-0.5">
+                    Lnm Verification Cleared
+                  </span>
+                  <h3 className="text-xl font-bold font-display text-white mt-1.5">Payment Settled Successfully!</h3>
+                  <p className="text-slate-300 text-xs mt-2 leading-relaxed">
+                    We have successfully matched and verified your Safaricom receipt. Your digital ledger balance has been adjusted!
+                  </p>
+                </div>
+                <div className="bg-slate-950/50 rounded-2xl p-4 border border-white/5 space-y-1.5 text-left text-xs font-mono">
+                  <div className="flex justify-between">
+                    <span className="text-slate-450">Transaction ID:</span>
+                    <span className="text-white font-bold">{paymentSuccess.replace("M-Pesa payment received and cleared! Receipt: ", "") || "N/A"}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-450">Amount Paid:</span>
+                    <span className="text-emerald-400 font-bold">KES {paymentAmount || "N/A"}</span>
+                  </div>
+                </div>
+                <button
+                  onClick={() => {
+                    setPaying(false);
+                    setPendingCheckoutId(null);
+                    setPaymentSuccess(null);
+                    setPaymentError(null);
+                  }}
+                  className="w-full py-3 mpesa-green hover:opacity-90 border-0 text-white font-bold rounded-xl text-xs transition-all uppercase tracking-wide cursor-pointer shadow-md"
+                >
+                  Return to Dashboard
+                </button>
+              </div>
+            ) : paymentError ? (
+              // 2. Failed Stage
+              <div className="space-y-4 pt-2">
+                <div className="w-16 h-16 bg-rose-505/15 border border-rose-500/45 rounded-full flex items-center justify-center mx-auto text-rose-400 animate-pulse">
+                  <XCircle className="w-8 h-8" />
+                </div>
+                <div>
+                  <span className="text-[10px] font-bold text-rose-400 uppercase tracking-widest font-mono bg-rose-950/50 border border-rose-500/20 px-2 rounded-full py-0.5">
+                    Transaction Terminated
+                  </span>
+                  <h3 className="text-xl font-bold font-display text-white mt-1.5 font-sans">M-Pesa Push Handshake Failed</h3>
+                  <p className="text-slate-300 text-xs mt-2 leading-relaxed">
+                    {paymentError}
+                  </p>
+                </div>
+                <button
+                  onClick={() => {
+                    setPaying(false);
+                    setPendingCheckoutId(null);
+                    setPaymentSuccess(null);
+                    setPaymentError(null);
+                  }}
+                  className="w-full py-3 bg-slate-800 hover:bg-slate-750 border-0 text-white font-bold rounded-xl text-xs transition-all uppercase tracking-wide cursor-pointer shadow-md"
+                >
+                  Acknowledge &amp; Adjust Parameters
+                </button>
+              </div>
+            ) : !pendingCheckoutId ? (
+              // 3. Dialing Stage (Handshaking)
+              <div className="space-y-5 py-4">
+                <div className="relative w-16 h-16 mx-auto flex items-center justify-center">
+                  <div className="absolute inset-0 border-2 border-emerald-500/10 rounded-full" />
+                  <div className="absolute inset-0 border-2 border-t-emerald-500 rounded-full animate-spin" />
+                  <Smartphone className="w-6 h-6 text-emerald-400 animate-pulse" />
+                </div>
+                <div>
+                  <span className="text-[10px] font-bold text-amber-400 uppercase tracking-widest font-mono bg-amber-500/10 border border-amber-500/20 px-2 rounded-full py-0.5 animate-pulse">
+                    Stage 1/3: Negotiating Gateways
+                  </span>
+                  <h3 className="text-lg font-bold font-display text-white mt-2.5 font-sans">Contacting Safaricom Daraja...</h3>
+                  <p className="text-slate-400 text-xs mt-2 leading-relaxed">
+                    Connecting to the Daraja 2.0 SSL socket. Safaricom requires authorizing token parameters before triggering the STK popup on <strong>+254 {paymentPhone.slice(-9)}</strong>.
+                  </p>
+                </div>
+                <p className="text-[10px] text-slate-500 font-mono italic">
+                  Running async handshake callback proxies...
+                </p>
+              </div>
+            ) : (
+              // 4. Awaiting PIN confirmations
+              <div className="space-y-5 py-2">
+                <div className="relative w-24 h-24 mx-auto flex items-center justify-center">
+                  {/* Rotating progress wheel */}
+                  <svg className="w-full h-full transform -rotate-90">
+                    <circle
+                      cx="48"
+                      cy="48"
+                      r="40"
+                      className="text-slate-850 stroke-current"
+                      strokeWidth="6"
+                      fill="transparent"
+                    />
+                    <circle
+                      cx="48"
+                      cy="48"
+                      r="40"
+                      className="text-emerald-500 stroke-current transition-all duration-1000"
+                      strokeWidth="6"
+                      strokeDasharray={2 * Math.PI * 40}
+                      strokeDashoffset={(2 * Math.PI * 40) * (1 - stkCountdown / 60)}
+                      fill="transparent"
+                    />
+                  </svg>
+                  <div className="absolute font-mono text-xl font-black text-white flex flex-col items-center">
+                    <span className="text-2xl text-emerald-400 font-bold">{stkCountdown}</span>
+                    <span className="text-[8px] text-slate-400 uppercase tracking-widest font-bold">Secs</span>
+                  </div>
+                </div>
+
+                <div>
+                  <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-widest font-mono bg-emerald-500/10 border border-emerald-500/20 px-2.5 rounded-full py-0.5 animate-pulse">
+                    🟢 Stage 2/3: PIN Awaiting
+                  </span>
+                  <h3 className="text-lg font-bold text-white mt-3 font-sans">Enter Money PIN on Phone</h3>
+                  <p className="text-slate-300 text-xs mt-2 leading-relaxed">
+                    Safaricom has dispatched a secure billing frame directly to your SIM lockscreen at <strong>+254 {paymentPhone.slice(-9)}</strong>.
+                  </p>
+                  <div className="bg-slate-950/60 p-3.5 rounded-2xl border border-white/5 mt-4 text-xs font-mono space-y-1.5 text-left max-w-sm mx-auto">
+                    <div className="flex justify-between border-b border-white/5 pb-1">
+                      <span className="text-slate-450">Billed Amount:</span>
+                      <strong className="text-white">KES {paymentAmount}</strong>
+                    </div>
+                    <div className="flex justify-between border-b border-white/5 pb-1">
+                      <span className="text-slate-450">Service Account:</span>
+                      <strong className="text-white">{customBrandName} Rent</strong>
+                    </div>
+                    <p className="text-[10px] text-amber-300 mt-1.5 text-center leading-normal">
+                      💡 <strong>Action Required:</strong> Check your handset screen right now. Input your standard Safaricom M-Pesa PIN &amp; hit Submit.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex gap-2 justify-center pt-2">
+                  <button
+                    onClick={() => {
+                      setPaying(false);
+                      setPendingCheckoutId(null);
+                      setPaymentSuccess(null);
+                      setPaymentError(null);
+                    }}
+                    className="w-full py-3 bg-slate-800 hover:bg-slate-750 text-slate-300 border-0 text-xs font-bold rounded-xl transition-all cursor-pointer uppercase tracking-wider"
+                  >
+                    Cancel Tracker
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       <footer className="py-4 text-center text-[10px] text-slate-450 bg-slate-950/50 border-t border-white/5 flex items-center justify-center gap-1">
         <Sparkles className="w-3.5 h-3.5 text-emerald-400" />

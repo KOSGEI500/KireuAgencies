@@ -1751,17 +1751,41 @@ app.post("/api/payments/stkpush", async (req, res) => {
   const devConfig = getAppConfig();
   const mpesaKey = devConfig.mpesaConsumerKey || process.env.MPESA_CONSUMER_KEY;
   const mpesaSecret = devConfig.mpesaConsumerSecret || process.env.MPESA_CONSUMER_SECRET;
-  const shortcode = devConfig.mpesaShortcode || process.env.MPESA_SHORTCODE || "174379";
-  const passkey = devConfig.mpesaPasskey || process.env.MPESA_PASSKEY || "bfb279f9aa9bdbcf158e97dd71a467cd2e0c893059b10f78e6b72dec1a0111e2";
+  const rawShortcode = devConfig.mpesaShortcode || process.env.MPESA_SHORTCODE || "174379";
+  const rawPasskey = devConfig.mpesaPasskey || process.env.MPESA_PASSKEY || "bfb279f9aa9bdbcf158e97dd71a467cd2e0c893059b10f78e6b72dec1a0111e2";
+
+  // New options
+  const mpesaEnv = devConfig.mpesaEnvironment || "sandbox"; // sandbox | production
+  const mpesaType = devConfig.mpesaTransactionType || "CustomerPayBillOnline"; // CustomerPayBillOnline | CustomerBuyGoodsOnline
+  const mpesaTillNumber = devConfig.mpesaTillNumber || "";
+
+  // Resolve active Shortcode, Passkey, and PartyB
+  let activeShortcode = rawShortcode.trim();
+  let activePasskey = rawPasskey.trim();
+  let activePartyB = mpesaTillNumber ? mpesaTillNumber.trim() : "";
+
+  if (mpesaType === "CustomerBuyGoodsOnline" && mpesaEnv === "sandbox") {
+    // In LNM Online Sandbox for Till numbers, if Store Number is empty/not provided, fallback to standard sandbox store `174379`
+    if (!activeShortcode || activeShortcode === "" || isNaN(Number(activeShortcode))) {
+      activeShortcode = "174379";
+    }
+    // If Till Number is empty, fallback to standard sandbox till `3064085`
+    if (!activePartyB || activePartyB === "") {
+      activePartyB = "3064085";
+    }
+  } else if (mpesaType === "CustomerPayBillOnline") {
+    activePartyB = activeShortcode;
+  }
 
   // Check if Safaricom credentials are empty or default developer keys
   const isSimulationMode =
     !mpesaKey ||
     mpesaKey.includes("provide") ||
+    mpesaKey.trim().length < 5 ||
     !mpSecretValid(mpesaSecret);
 
   function mpSecretValid(sec: string | undefined): boolean {
-    return !!sec && !sec.includes("provide") && sec.length > 5;
+    return !!sec && !sec.includes("provide") && sec.trim().length > 5;
   }
 
   const checkoutRequestId = "ws_CO_" + Date.now().toString().slice(-14);
@@ -1799,17 +1823,18 @@ app.post("/api/payments/stkpush", async (req, res) => {
 
   // LIVE INTERACTION WITH SAFARICOM DARAJA 2.0 API
   try {
-    const authHeader = Buffer.from(`${mpesaKey}:${mpesaSecret}`).toString("base64");
-    const tokenResponse = await fetch(
-      "https://sandbox.safaricom.co.ke/oauth/v1/generate?grant_type=client_credentials",
-      {
-        method: "GET",
-        headers: { Authorization: `Basic ${authHeader}` }
-      }
-    );
+    const domain = mpesaEnv === "production" ? "api.safaricom.co.ke" : "sandbox.safaricom.co.ke";
+    const tokenUrl = `https://${domain}/oauth/v1/generate?grant_type=client_credentials`;
+    const processRequestUrl = `https://${domain}/mpesa/stkpush/v1/processrequest`;
+
+    const authHeader = Buffer.from(`${mpesaKey.trim()}:${mpesaSecret.trim()}`).toString("base64");
+    const tokenResponse = await fetch(tokenUrl, {
+      method: "GET",
+      headers: { Authorization: `Basic ${authHeader}` }
+    });
 
     if (!tokenResponse.ok) {
-      throw new Error(`Token generation failed: ${tokenResponse.statusText}`);
+      throw new Error(`Token generation failed with status ${tokenResponse.status}: ${tokenResponse.statusText}`);
     }
 
     const tokenData = await tokenResponse.json() as { access_token: string };
@@ -1817,27 +1842,37 @@ app.post("/api/payments/stkpush", async (req, res) => {
 
     // Build Stamp Password: BusinessShortCode + PassKey + Timestamp
     const timestamp = getMpesaTimestamp();
-    const rawPassword = `${shortcode}${passkey}${timestamp}`;
+    const rawPassword = `${activeShortcode}${activePasskey}${timestamp}`;
     const password = Buffer.from(rawPassword).toString("base64");
 
-    const appUrl = process.env.APP_URL || "https://ais-dev-7zvnbqb6zbhhrijn47uo3w-479042236324.europe-west2.run.app";
-    const callbackTarget = `${appUrl}/api/mpesa/callback`;
+    // Dynamic reconstruction of callback URL so Safaricom hits the correct host
+    const reqProtocol = req.headers["x-forwarded-proto"] || "https";
+    const reqHost = req.headers.host || "ais-dev-7zvnbqb6zbhhrijn47uo3w-479042236324.europe-west2.run.app";
+    let callbackTarget = `${reqProtocol}://${reqHost}/api/mpesa/callback`;
+    if (devConfig.productionUrl) {
+      callbackTarget = `${devConfig.productionUrl.replace(/\/$/, "")}/api/mpesa/callback`;
+    }
+
+    // Determine PartyB & TransactionType based on Paybill vs Buy Goods (Till Number) setup
+    const transactionType = mpesaType; // CustomerPayBillOnline or CustomerBuyGoodsOnline
 
     const stkBody = {
-      BusinessShortCode: shortcode,
+      BusinessShortCode: activeShortcode,
       Password: password,
       Timestamp: timestamp,
-      TransactionType: "CustomerPayBillOnline",
+      TransactionType: transactionType,
       Amount: Math.round(Number(amount)),
       PartyA: cleanPhone,
-      PartyB: shortcode,
+      PartyB: activePartyB,
       PhoneNumber: cleanPhone,
       CallBackURL: callbackTarget,
       AccountReference: `Room ${tenant.assigned_room_number}`,
       TransactionDesc: `Rent Cleared`
     };
 
-    const pushResponse = await fetch("https://sandbox.safaricom.co.ke/mpesa/stkpush/v1/processrequest", {
+    console.log(`[M-Pesa Live] Outgoing STK Push request body:`, JSON.stringify(stkBody));
+
+    const pushResponse = await fetch(processRequestUrl, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${accessToken}`,
@@ -1851,6 +1886,8 @@ app.post("/api/payments/stkpush", async (req, res) => {
       CheckoutRequestID?: string;
       ResponseDescription?: string;
     };
+
+    console.log(`[M-Pesa Live] Daraja Server response received status: ${pushResponse.status}`, JSON.stringify(pushResult));
 
     if (pushResult.ResponseCode === "0") {
       // Overwrite checkout request id for tracking
@@ -1877,16 +1914,16 @@ app.post("/api/payments/stkpush", async (req, res) => {
       }
       res.status(400).json({ error: pushResult.ResponseDescription || "Safaricom rejected the STK Push request." });
     }
-  } catch (error) {
+  } catch (error: any) {
     console.error("Daraja 2.0 Live Push Error: ", error);
-    // Graceful fallback to simulation
+    // Graceful fallback to simulation if connecting to real Daraja API fails
     setTimeout(() => {
       simulatedCallback(checkoutRequestId, Number(amount), cleanPhone);
     }, 3000);
 
     res.json({
       success: true,
-      message: "Live API connection timed out. Automatically falling back to high-fidelity Sandbox Simulation.",
+      message: `Live Daraja communication failed (${error.message || error}). Falling back to Sandbox/Simulation Mode.`,
       checkoutRequestId,
       isSimulation: true
     });

@@ -112,6 +112,67 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
   }, []);
 
   // States for Developer & Owner Contact Configuration
+  const [adminStkTracking, setAdminStkTracking] = useState<{
+    tenantId: string;
+    tenantName: string;
+    phone: string;
+    amount: number;
+    checkoutId: string | null;
+    status: "handshaking" | "pending" | "success" | "failed";
+    errorMessage?: string;
+  } | null>(null);
+  const [adminStkCountdown, setAdminStkCountdown] = useState(60);
+
+  // Poll payment ledger to check if on-behalf triggered payment is successful or failed
+  useEffect(() => {
+    let interval: NodeJS.Timeout;
+    if (adminStkTracking && adminStkTracking.status === "pending" && adminStkTracking.checkoutId) {
+      interval = setInterval(async () => {
+        try {
+          const res = await fetch("/api/payments");
+          if (res.ok) {
+            const pays: Payment[] = await res.json();
+            const match = pays.find(p => p.checkout_request_id === adminStkTracking.checkoutId);
+            if (match) {
+              if (match.status === "Completed") {
+                setAdminStkTracking(prev => prev ? { ...prev, status: "success" } : null);
+                // Refresh property/metrics
+                fetchPropertySpecifics();
+                onRefreshProperties();
+              } else if (match.status === "Failed") {
+                setAdminStkTracking(prev => prev ? { ...prev, status: "failed", errorMessage: "Lipa na M-Pesa transaction was cancelled or timed out by the subscriber." } : null);
+              }
+            }
+          }
+        } catch (e) {
+          console.warn("Admin polling STK error gracefully:", e);
+        }
+      }, 3000);
+    }
+    return () => clearInterval(interval);
+  }, [adminStkTracking?.status, adminStkTracking?.checkoutId]);
+
+  // Handle countdown Timer for Admin STK Push feedback
+  useEffect(() => {
+    let timer: NodeJS.Timeout;
+    if (adminStkTracking && adminStkTracking.status === "pending") {
+      setAdminStkCountdown(60);
+      timer = setInterval(() => {
+        setAdminStkCountdown(prev => {
+          if (prev <= 1) {
+            clearInterval(timer);
+            setAdminStkTracking(prevTrk => prevTrk ? { ...prevTrk, status: "failed", errorMessage: "The subscriber session timed out after 60 seconds without authorization PIN input." } : null);
+            return 60;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    } else {
+      setAdminStkCountdown(60);
+    }
+    return () => clearInterval(timer);
+  }, [adminStkTracking?.status, adminStkTracking?.tenantId]);
+
   const [devName, setDevName] = useState("");
   const [devPhone, setDevPhone] = useState("");
   const [devEmail, setDevEmail] = useState("");
@@ -309,6 +370,9 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
     mpesaConsumerSecret: "",
     mpesaShortcode: "",
     mpesaPasskey: "",
+    mpesaEnvironment: "sandbox",
+    mpesaTransactionType: "CustomerPayBillOnline",
+    mpesaTillNumber: "",
     atApiKey: "",
     atUsername: "",
     googleClientId: "",
@@ -606,6 +670,9 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
             mpesaConsumerSecret: data.mpesaConsumerSecret || "",
             mpesaShortcode: data.mpesaShortcode || "",
             mpesaPasskey: data.mpesaPasskey || "",
+            mpesaEnvironment: data.mpesaEnvironment || "sandbox",
+            mpesaTransactionType: data.mpesaTransactionType || "CustomerPayBillOnline",
+            mpesaTillNumber: data.mpesaTillNumber || "",
             atApiKey: data.atApiKey || "",
             atUsername: data.atUsername || "",
             googleClientId: data.googleClientId || "",
@@ -1476,6 +1543,17 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
   // Trigger STK Push popup to tenant on behalf from dashboard
   const handleTriggerMpesaOnBehalf = async (tenantRef: any) => {
     setStkTriggering(tenantRef.tenant_id);
+    const billingAmount = Math.round(Number(tenantRef.billing?.outstandingBalance || 105));
+    
+    setAdminStkTracking({
+      tenantId: tenantRef.tenant_id,
+      tenantName: tenantRef.full_name,
+      phone: tenantRef.phone_number,
+      amount: billingAmount,
+      checkoutId: null,
+      status: "handshaking"
+    });
+
     try {
       const response = await fetch("/api/payments/stkpush", {
         method: "POST",
@@ -1483,20 +1561,36 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
         body: JSON.stringify({
           tenant_id: tenantRef.tenant_id,
           phone_number: tenantRef.phone_number,
-          amount: Math.round(Number(tenantRef.billing?.outstandingBalance || 100))
+          amount: billingAmount
         })
       });
 
       const data = await response.json();
       if (!response.ok) {
-        throw new Error(data.error);
+        throw new Error(data.error || "M-Pesa API Handshake rejected.");
       }
 
-      alert(`Lipa Na M-Pesa STK push popup sent on-behalf to ${tenantRef.full_name} (+254${tenantRef.phone_number.slice(-9)}) KES ${Math.round(tenantRef.billing?.outstandingBalance)}`);
+      setAdminStkTracking({
+        tenantId: tenantRef.tenant_id,
+        tenantName: tenantRef.full_name,
+        phone: tenantRef.phone_number,
+        amount: billingAmount,
+        checkoutId: data.checkoutRequestId,
+        status: "pending"
+      });
+
       fetchPropertySpecifics();
       onRefreshProperties();
     } catch (err: any) {
-      alert(`Handshake rejected: ${err.message || "Verification fail"}`);
+      setAdminStkTracking({
+        tenantId: tenantRef.tenant_id,
+        tenantName: tenantRef.full_name,
+        phone: tenantRef.phone_number,
+        amount: billingAmount,
+        checkoutId: null,
+        status: "failed",
+        errorMessage: err.message || "Failed to initiate M-Pesa push handshake."
+      });
     } finally {
       setStkTriggering(null);
     }
@@ -4601,55 +4695,161 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
                 </div>
               )}
 
-              <form onSubmit={handleUpdateDevConfig} className="space-y-5 font-sans">
+              <form onSubmit={handleUpdateDevConfig} className="space-y-6 font-sans">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                  {/* Environment setup */}
+                  <div className="space-y-1.5 md:col-span-2 bg-slate-50 p-4 border border-slate-200 rounded-2xl">
+                    <label className="block text-[11px] font-extrabold text-slate-700 uppercase tracking-wider">M-Pesa API Environment Setup</label>
+                    <div className="grid grid-cols-2 gap-3 mt-1.5">
+                      <button
+                        type="button"
+                        onClick={() => setDevConfig({ ...devConfig, mpesaEnvironment: "sandbox" })}
+                        className={`py-2 px-4 rounded-xl text-xs font-bold transition-all cursor-pointer border ${
+                          (devConfig.mpesaEnvironment || "sandbox") === "sandbox"
+                            ? "bg-slate-900 border-slate-900 text-emerald-400 shadow-sm font-extrabold"
+                            : "bg-white border-slate-200 text-slate-650 hover:bg-slate-50"
+                        }`}
+                      >
+                        🧪 Sandbox Environment
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setDevConfig({ ...devConfig, mpesaEnvironment: "production" })}
+                        className={`py-2 px-4 rounded-xl text-xs font-bold transition-all cursor-pointer border ${
+                          devConfig.mpesaEnvironment === "production"
+                            ? "bg-emerald-500 border-emerald-500 text-slate-950 shadow-sm font-extrabold"
+                            : "bg-white border-slate-200 text-slate-650 hover:bg-slate-50"
+                        }`}
+                      >
+                        🚀 Production Environment
+                      </button>
+                    </div>
+                    <p className="text-[10px] text-slate-500 mt-1.5 leading-relaxed">
+                      {(devConfig.mpesaEnvironment || "sandbox") === "sandbox"
+                        ? "Currently configured to Sandbox keys. Resolves token & STK push requests through Daraja Sandbox servers."
+                        : "Currently configured to Live keys. Submits processed pushes directly through api.safaricom.co.ke. REAL money charges will occur."}
+                    </p>
+                  </div>
+
+                  {/* Transaction Type Setup */}
+                  <div className="space-y-1.5 md:col-span-2 bg-slate-50 p-4 border border-slate-200 rounded-2xl">
+                    <label className="block text-[11px] font-extrabold text-slate-700 uppercase tracking-wider">M-Pesa Transaction Channel Type</label>
+                    <div className="grid grid-cols-2 gap-3 mt-1.5">
+                      <button
+                        type="button"
+                        onClick={() => setDevConfig({ ...devConfig, mpesaTransactionType: "CustomerPayBillOnline" })}
+                        className={`py-2 px-4 rounded-xl text-xs font-bold transition-all cursor-pointer border ${
+                          (devConfig.mpesaTransactionType || "CustomerPayBillOnline") === "CustomerPayBillOnline"
+                            ? "bg-slate-900 border-slate-900 text-emerald-400 shadow-sm font-extrabold"
+                            : "bg-white border-slate-200 text-slate-650 hover:bg-slate-50"
+                        }`}
+                      >
+                        💳 Paybill Number
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setDevConfig({ ...devConfig, mpesaTransactionType: "CustomerBuyGoodsOnline" })}
+                        className={`py-2 px-4 rounded-xl text-xs font-bold transition-all cursor-pointer border ${
+                          devConfig.mpesaTransactionType === "CustomerBuyGoodsOnline"
+                            ? "bg-slate-900 border-slate-900 text-emerald-400 shadow-sm font-extrabold"
+                            : "bg-white border-slate-200 text-slate-650 hover:bg-slate-50"
+                        }`}
+                      >
+                        🛍️ Buy Goods (Till Number)
+                      </button>
+                    </div>
+                    <p className="text-[10px] text-slate-500 mt-1.5 leading-relaxed">
+                      {(devConfig.mpesaTransactionType || "CustomerPayBillOnline") === "CustomerPayBillOnline"
+                        ? "Normal Safaricom Lipa Na M-Pesa Paybill configurations (uses CustomerPayBillOnline transaction type, for Paybills like 174379)."
+                        : "Buy Goods till number integration (uses CustomerBuyGoodsOnline transaction type). Requires both Store Number & Till Number."}
+                    </p>
+                  </div>
+
                   <div className="space-y-1.5">
-                    <label className="block text-xs font-bold text-slate-700 uppercase">M-Pesa Customer Key</label>
+                    <label className="block text-xs font-bold text-slate-700 uppercase">M-Pesa Consumer Key (Keys from Daraja Portal)</label>
                     <input
                       type="text"
                       required
                       value={devConfig.mpesaConsumerKey}
                       onChange={(e) => setDevConfig({ ...devConfig, mpesaConsumerKey: e.target.value })}
-                      className="w-full bg-slate-50 border border-slate-200 focus:bg-white focus:ring-1 focus:ring-emerald-400 text-slate-800 text-xs rounded-lg py-2 px-3 focus:outline-none"
+                      className="w-full bg-slate-50 border border-slate-200 focus:bg-white focus:ring-1 focus:ring-emerald-400 text-slate-800 text-xs rounded-lg py-2 px-3 focus:outline-none placeholder-slate-400 font-mono"
                       placeholder="e.g. bU8YpB7W..."
                     />
                   </div>
 
                   <div className="space-y-1.5">
-                    <label className="block text-xs font-bold text-slate-700 uppercase">M-Pesa Customer Secret</label>
+                    <label className="block text-xs font-bold text-slate-700 uppercase">M-Pesa Consumer Secret (Secret from Daraja Portal)</label>
                     <input
                       type="text"
                       required
                       value={devConfig.mpesaConsumerSecret}
                       onChange={(e) => setDevConfig({ ...devConfig, mpesaConsumerSecret: e.target.value })}
-                      className="w-full bg-slate-50 border border-slate-200 focus:bg-white focus:ring-1 focus:ring-emerald-400 text-slate-800 text-xs rounded-lg py-2 px-3 focus:outline-none"
+                      className="w-full bg-slate-50 border border-slate-200 focus:bg-white focus:ring-1 focus:ring-emerald-400 text-slate-800 text-xs rounded-lg py-2 px-3 focus:outline-none placeholder-slate-400 font-mono"
                       placeholder="e.g. oYt3eE..."
                     />
                   </div>
 
                   <div className="space-y-1.5">
-                    <label className="block text-xs font-bold text-slate-700 uppercase">Business Shortcode</label>
+                    <label className="block text-xs font-bold text-slate-700 uppercase">
+                      {devConfig.mpesaTransactionType === "CustomerBuyGoodsOnline"
+                        ? `Store Number (Store Utility${(devConfig.mpesaEnvironment || "sandbox") === "sandbox" ? " - Optional in Sandbox" : ""})`
+                        : "Business Shortcode"}
+                    </label>
                     <input
                       type="text"
-                      required
+                      required={devConfig.mpesaTransactionType !== "CustomerBuyGoodsOnline" || devConfig.mpesaEnvironment === "production"}
                       value={devConfig.mpesaShortcode}
                       onChange={(e) => setDevConfig({ ...devConfig, mpesaShortcode: e.target.value })}
-                      className="w-full bg-slate-50 border border-slate-200 focus:bg-white focus:ring-1 focus:ring-emerald-400 text-slate-800 text-xs rounded-lg py-2 px-3 focus:outline-none"
-                      placeholder="e.g. 174379 (Sandbox) or Paybill/Till No"
+                      className="w-full bg-slate-50 border border-slate-200 focus:bg-white focus:ring-1 focus:ring-emerald-400 text-slate-800 text-xs rounded-lg py-2 px-3 focus:outline-none placeholder-slate-400"
+                      placeholder={
+                        devConfig.mpesaTransactionType === "CustomerBuyGoodsOnline"
+                          ? (devConfig.mpesaEnvironment || "sandbox") === "sandbox"
+                            ? "Optional: defaults to 174379 in Sandbox"
+                            : "e.g. 4000000 (Store Shortcode)"
+                          : "e.g. 174379"
+                      }
                     />
                   </div>
 
-                  <div className="space-y-1.5">
-                    <label className="block text-xs font-bold text-slate-700 uppercase">Passkey (Lipa na M-Pesa Online Passkey)</label>
-                    <input
-                      type="text"
-                      required
-                      value={devConfig.mpesaPasskey}
-                      onChange={(e) => setDevConfig({ ...devConfig, mpesaPasskey: e.target.value })}
-                      className="w-full bg-slate-50 border border-slate-200 focus:bg-white focus:ring-1 focus:ring-emerald-400 text-slate-800 text-xs rounded-lg py-2 px-3 focus:outline-none"
-                      placeholder="bfb279f9aa9bdbcf158e97dd71a467cd..."
-                    />
-                  </div>
+                  {devConfig.mpesaTransactionType === "CustomerBuyGoodsOnline" ? (
+                    <div className="space-y-1.5 animate-in fade-in duration-200">
+                      <label className="block text-xs font-bold text-slate-700 uppercase">Till Number (Party B)</label>
+                      <input
+                        type="text"
+                        required
+                        value={devConfig.mpesaTillNumber || ""}
+                        onChange={(e) => setDevConfig({ ...devConfig, mpesaTillNumber: e.target.value })}
+                        className="w-full bg-slate-50 border border-slate-200 focus:bg-white focus:ring-1 focus:ring-emerald-400 text-slate-800 text-xs rounded-lg py-2 px-3 focus:outline-none placeholder-slate-400"
+                        placeholder="e.g. 5123456"
+                      />
+                    </div>
+                  ) : (
+                    <div className="space-y-1.5">
+                      <label className="block text-xs font-bold text-slate-700 uppercase">Passkey (LNM Online Passkey)</label>
+                      <input
+                        type="text"
+                        required
+                        value={devConfig.mpesaPasskey}
+                        onChange={(e) => setDevConfig({ ...devConfig, mpesaPasskey: e.target.value })}
+                        className="w-full bg-slate-50 border border-slate-200 focus:bg-white focus:ring-1 focus:ring-emerald-400 text-slate-800 text-xs rounded-lg py-2 px-3 focus:outline-none placeholder-slate-400 font-mono"
+                        placeholder="bfb279f9aa9bdbcf158e97dd..."
+                      />
+                    </div>
+                  )}
+
+                  {devConfig.mpesaTransactionType === "CustomerBuyGoodsOnline" && (
+                    <div className="space-y-1.5 md:col-span-2">
+                      <label className="block text-xs font-bold text-slate-700 uppercase">Passkey (LNM Online Passkey)</label>
+                      <input
+                        type="text"
+                        required
+                        value={devConfig.mpesaPasskey}
+                        onChange={(e) => setDevConfig({ ...devConfig, mpesaPasskey: e.target.value })}
+                        className="w-full bg-slate-50 border border-slate-200 focus:bg-white focus:ring-1 focus:ring-emerald-400 text-slate-800 text-xs rounded-lg py-2 px-3 focus:outline-none placeholder-slate-400 font-mono"
+                        placeholder="bfb279f9aa9bdbcf158e97dd..."
+                      />
+                    </div>
+                  )}
                 </div>
 
                 <div className="pt-4 border-t border-slate-100 flex flex-col sm:flex-row gap-3 justify-end">
@@ -5382,6 +5582,144 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
                 {isDeleting ? "Wiping Records..." : "Confirm Deletion ✓"}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ADMINISTRATOR ON-BEHALF MPESA STK PUSH MONITOR */}
+      {adminStkTracking && (
+        <div id="admin-mpesa-status-tracker-modal" className="fixed inset-0 bg-slate-950/85 backdrop-blur-xl z-[60] flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-emerald-500/30 rounded-3xl p-6 sm:p-8 max-w-md w-full text-center shadow-2xl relative overflow-hidden animate-in zoom-in-95 duration-250 font-sans">
+            {/* Ambient Background Glow */}
+            <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-500/10 rounded-full blur-2xl pointer-events-none" />
+            <div className="absolute bottom-0 left-0 w-32 h-32 bg-teal-500/10 rounded-full blur-2xl pointer-events-none" />
+
+            <button
+              onClick={() => setAdminStkTracking(null)}
+              className="absolute top-4 right-4 text-slate-400 hover:text-white bg-slate-800/50 hover:bg-slate-800 p-2 rounded-full transition-all cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
+
+            {adminStkTracking.status === "success" ? (
+              <div className="space-y-4 pt-2">
+                <div className="w-16 h-16 bg-emerald-500/15 border border-emerald-500/40 rounded-full flex items-center justify-center mx-auto text-emerald-450 animate-bounce">
+                  <CheckCircle className="w-8 h-8" />
+                </div>
+                <div>
+                  <span className="text-[10px] font-bold text-emerald-450 uppercase tracking-widest font-mono bg-emerald-950/50 border border-emerald-500/20 px-2 rounded-full py-0.5">
+                    SUCCESSFULLY CLEARED
+                  </span>
+                  <h3 className="text-xl font-bold font-display text-white mt-1.5 font-sans animate-pulse font-extrabold pb-0.5">Payment Received and Recorded!</h3>
+                  <p className="text-slate-300 text-xs mt-2 leading-relaxed">
+                    Safaricom STK response verified! A digital receipt was generated automatically, and Resident <strong>{adminStkTracking.tenantName}</strong> is updated to green paid status.
+                  </p>
+                </div>
+                <button
+                  onClick={() => setAdminStkTracking(null)}
+                  className="w-full py-3 bg-emerald-600 hover:bg-emerald-550 border-0 text-white font-bold rounded-xl text-xs transition-all uppercase tracking-wide cursor-pointer shadow-md"
+                >
+                  Close Monitor
+                </button>
+              </div>
+            ) : adminStkTracking.status === "failed" ? (
+              <div className="space-y-4 pt-2">
+                <div className="w-16 h-16 bg-rose-500/15 border border-rose-500/45 rounded-full flex items-center justify-center mx-auto text-rose-400 animate-pulse">
+                  <AlertCircle className="w-8 h-8" />
+                </div>
+                <div>
+                  <span className="text-[10px] font-bold text-rose-450 uppercase tracking-widest font-mono bg-rose-950/50 border border-rose-500/20 px-2 rounded-full py-0.5">
+                    TRANSACTION RETRACTED
+                  </span>
+                  <h3 className="text-xl font-bold font-display text-white mt-1.5 font-sans font-extrabold pb-0.5">STK Request Canceled or Timed Out</h3>
+                  <p className="text-slate-300 text-xs mt-2 leading-relaxed">
+                    {adminStkTracking.errorMessage || "The transaction handshakes failed or got rejected on Safaricom's side."}
+                  </p>
+                </div>
+                <button
+                  onClick={() => setAdminStkTracking(null)}
+                  className="w-full py-3 bg-slate-800 hover:bg-slate-750 border-0 text-white font-bold rounded-xl text-xs transition-all uppercase tracking-wide cursor-pointer shadow-md"
+                >
+                  Dismiss / Retrack
+                </button>
+              </div>
+            ) : adminStkTracking.status === "handshaking" ? (
+              <div className="space-y-5 py-4">
+                <div className="relative w-16 h-16 mx-auto flex items-center justify-center">
+                  <div className="absolute inset-0 border-2 border-emerald-500/10 rounded-full" />
+                  <div className="absolute inset-0 border-2 border-t-emerald-500 rounded-full animate-spin" />
+                  <Smartphone className="w-6 h-6 text-emerald-400 animate-pulse" />
+                </div>
+                <div>
+                  <span className="text-[10px] font-bold text-amber-500 uppercase tracking-widest font-mono bg-amber-500/10 border border-amber-500/20 px-2 rounded-full py-0.5 animate-pulse">
+                    DIALING SAFARICOM
+                  </span>
+                  <h3 className="text-lg font-bold font-display text-white mt-2.5 font-sans font-extrabold pb-0.5">Broadcasting STK Push popup...</h3>
+                  <p className="text-slate-400 text-xs mt-2 leading-relaxed">
+                    Handshaking with Safaricom Daraja SSL. Authorizing credentials and requesting STK on-behalf of <strong>{adminStkTracking.tenantName}</strong>.
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-5 py-2">
+                <div className="relative w-24 h-24 mx-auto flex items-center justify-center">
+                  {/* Rotating progress wheel */}
+                  <svg className="w-full h-full transform -rotate-90">
+                    <circle
+                      cx="48"
+                      cy="48"
+                      r="40"
+                      className="text-slate-800 stroke-current"
+                      strokeWidth="6"
+                      fill="transparent"
+                    />
+                    <circle
+                      cx="48"
+                      cy="48"
+                      r="40"
+                      className="text-emerald-500 stroke-current transition-all duration-1000"
+                      strokeWidth="6"
+                      strokeDasharray={2 * Math.PI * 40}
+                      strokeDashoffset={(2 * Math.PI * 40) * (1 - adminStkCountdown / 60)}
+                      fill="transparent"
+                    />
+                  </svg>
+                  <div className="absolute font-mono text-xl font-black text-white flex flex-col items-center">
+                    <span className="text-2xl text-emerald-400 font-bold">{adminStkCountdown}</span>
+                    <span className="text-[8px] text-slate-400 uppercase tracking-widest font-bold">Secs</span>
+                  </div>
+                </div>
+
+                <div>
+                  <span className="text-[10px] font-bold text-emerald-450 uppercase tracking-widest font-mono bg-emerald-500/10 border border-emerald-500/20 px-2.5 rounded-full py-0.5 animate-pulse font-semibold">
+                    🟢 AWAITING RESIDENT PIN TYPE-IN
+                  </span>
+                  <h3 className="text-lg font-bold text-white mt-3 font-sans font-extrabold pb-0.5">Tenant Prompt Dispatched</h3>
+                  <p className="text-slate-300 text-xs mt-2 leading-relaxed">
+                    Lipa Na M-Pesa push prompt sent to <strong>{adminStkTracking.tenantName} (+254 {adminStkTracking.phone.slice(-9)})</strong>.
+                  </p>
+                  <div className="bg-slate-950/60 p-3.5 rounded-2xl border border-white/5 mt-4 text-xs font-mono space-y-1.5 text-left max-w-sm mx-auto">
+                    <div className="flex justify-between border-b border-white/5 pb-1">
+                      <span className="text-slate-450">Billed Amount:</span>
+                      <strong className="text-white">KES {adminStkTracking.amount}</strong>
+                    </div>
+                    <div className="flex justify-between border-b border-white/5 pb-1">
+                      <span className="text-slate-450">Associated Phone:</span>
+                      <strong className="text-white">+{adminStkTracking.phone}</strong>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex gap-2 justify-center pt-2">
+                  <button
+                    onClick={() => setAdminStkTracking(null)}
+                    className="w-full py-3 bg-slate-800 hover:bg-slate-750 text-slate-300 border-0 text-xs font-bold rounded-xl transition-all cursor-pointer uppercase tracking-wider"
+                  >
+                    Hide Monitor
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
