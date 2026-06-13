@@ -27,6 +27,7 @@ export default function AuthScreens({ properties, onAdminLogin, onTenantLogin }:
     owner_contact: { name: string; phone: string; email: string; background: string };
   } | null>(null);
   const [showContactModal, setShowContactModal] = useState(false);
+  const [showDeveloperInfo, setShowDeveloperInfo] = useState(false);
 
   const fetchContacts = async () => {
     try {
@@ -53,6 +54,7 @@ export default function AuthScreens({ properties, onAdminLogin, onTenantLogin }:
       } else if (hash === "#/contact") {
         setCurrentPage("landing");
         setShowContactModal(true);
+        setShowDeveloperInfo(false); // Reset to hide developer info by default
         setShowRequestHouseModal(false);
         setShowTerms(false);
         setShowPrivacy(false);
@@ -470,8 +472,10 @@ export default function AuthScreens({ properties, onAdminLogin, onTenantLogin }:
     }
   };
 
+  const isOuterStatic = currentPage === "login" || showRequestHouseModal || showContactModal || showTerms || showPrivacy;
+
   return (
-    <div className="bg-transparent text-slate-100 flex flex-col justify-between transition-all duration-300 relative font-sans min-h-screen overflow-x-hidden">
+    <div className={`bg-transparent text-slate-100 flex flex-col justify-between transition-all duration-300 relative font-sans ${isOuterStatic ? "h-screen overflow-hidden" : "min-h-screen overflow-x-hidden"}`}>
       
       {/* NAVBAR HEADER BAR */}
       <header className="w-full border-b border-white/5 bg-slate-900/60 sticky top-0 z-50 backdrop-blur-md transition-all duration-300">
@@ -686,7 +690,6 @@ export default function AuthScreens({ properties, onAdminLogin, onTenantLogin }:
                     </div>
                     <div>
                       <h4 className="text-xs font-bold text-slate-200">Sign in with Google</h4>
-                      <p className="text-[10px] text-slate-400">For verified supervisor accounts & supervisor panel access</p>
                     </div>
                   </div>
 
@@ -726,23 +729,35 @@ export default function AuthScreens({ properties, onAdminLogin, onTenantLogin }:
       )}
 
       {/* FOOTER METRICS INFO */}
-      <footer className="py-8 border-t border-white/5 bg-slate-950/60 text-slate-300 mt-auto relative z-10 font-sans">
-        <div className="max-w-7xl mx-auto w-full px-6 flex flex-col md:flex-row justify-between items-center gap-6">
-          <div className="text-left space-y-1">
-            <p className="text-sm">
-              &copy; {new Date().getFullYear()} <strong>KIREU HOUSES</strong>. All rights reserved.
-            </p>
-            <p className="text-xs text-slate-400 max-w-md">
-              Delivering modern housing, structural management, and premium real estate development.
-            </p>
+      {currentPage === "login" ? (
+        <footer className="py-4 border-t border-white/5 bg-slate-950/60 text-slate-300 mt-auto relative z-10 font-sans">
+          <div className="max-w-7xl mx-auto w-full px-6 flex justify-center items-center">
+            <div className="flex items-center gap-3 text-xs font-semibold uppercase tracking-wider font-mono text-slate-400">
+              <button onClick={() => { window.location.hash = "#/privacy"; }} className="hover:text-emerald-400 transition cursor-pointer">Privacy Policy</button>
+              <span className="text-slate-700">•</span>
+              <button onClick={() => { window.location.hash = "#/terms"; }} className="hover:text-emerald-450 transition cursor-pointer">Terms of Service</button>
+            </div>
           </div>
-          <div className="flex items-center gap-3 text-xs font-semibold uppercase tracking-wider font-mono text-slate-400">
-            <button onClick={() => { window.location.hash = "#/privacy"; }} className="hover:text-emerald-400 transition cursor-pointer">Privacy Policy</button>
-            <span className="text-slate-700">•</span>
-            <button onClick={() => { window.location.hash = "#/terms"; }} className="hover:text-emerald-450 transition cursor-pointer">Terms of Service</button>
+        </footer>
+      ) : (
+        <footer className="py-8 border-t border-white/5 bg-slate-950/60 text-slate-300 mt-auto relative z-10 font-sans">
+          <div className="max-w-7xl mx-auto w-full px-6 flex flex-col md:flex-row justify-between items-center gap-6">
+            <div className="text-left space-y-1">
+              <p className="text-sm">
+                &copy; {new Date().getFullYear()} <strong>KIREU HOUSES</strong>. All rights reserved.
+              </p>
+              <p className="text-xs text-slate-400 max-w-md">
+                Delivering modern housing, structural management, and premium real estate development.
+              </p>
+            </div>
+            <div className="flex items-center gap-3 text-xs font-semibold uppercase tracking-wider font-mono text-slate-400">
+              <button onClick={() => { window.location.hash = "#/privacy"; }} className="hover:text-emerald-400 transition cursor-pointer">Privacy Policy</button>
+              <span className="text-slate-700">•</span>
+              <button onClick={() => { window.location.hash = "#/terms"; }} className="hover:text-emerald-450 transition cursor-pointer">Terms of Service</button>
+            </div>
           </div>
-        </div>
-      </footer>
+        </footer>
+      )}
 
       {/* REQUEST A HOUSE / VACANT ROOM REQUEST MODAL */}
       {showRequestHouseModal && (
@@ -1090,9 +1105,9 @@ export default function AuthScreens({ properties, onAdminLogin, onTenantLogin }:
               </button>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2">
+            <div className="space-y-6 pt-2">
               {/* BLOCK 1: THE PREMIER OWNER - ONEWEE OF KIREU HEALTHY RESIDENCES */}
-              <div className="bg-gradient-to-br from-slate-950 to-slate-900 border border-emerald-500/10 rounded-2xl p-5 sm:p-6 flex flex-col justify-between space-y-4">
+              <div className="bg-gradient-to-br from-slate-950 to-slate-900 border border-emerald-500/10 rounded-2xl p-5 sm:p-6 flex flex-col justify-between space-y-4 max-w-xl mx-auto w-full">
                 <div className="space-y-3">
                   <div className="flex items-center gap-2 justify-between">
                     <span className="px-2 py-0.5 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 font-mono text-[9px] uppercase tracking-wider font-extrabold rounded">
@@ -1146,60 +1161,75 @@ export default function AuthScreens({ properties, onAdminLogin, onTenantLogin }:
                 </div>
               </div>
 
+              {/* DEVELOPER INFO ACTION BUTTON */}
+              <div className="flex justify-center">
+                <button
+                  type="button"
+                  id="developer-info-btn"
+                  onClick={() => setShowDeveloperInfo(!showDeveloperInfo)}
+                  className="px-5 py-3 bg-gradient-to-r from-blue-900/40 to-indigo-900/45 hover:from-blue-800/50 hover:to-indigo-850 text-blue-300 hover:text-white font-bold uppercase text-[10px] tracking-wider rounded-xl border border-blue-500/30 shadow-xs flex items-center gap-2 transition-all duration-300 hover:scale-[1.03] cursor-pointer"
+                >
+                  <Code className="w-4 h-4 text-blue-400" />
+                  <span>{showDeveloperInfo ? "Hide Developer Info" : "View Developer Info"}</span>
+                </button>
+              </div>
+
               {/* BLOCK 2: THE LEAD SYSTEMS ARCHITECT & SCIENTIST - COLLINS KOSGEI */}
-              <div className="bg-gradient-to-br from-slate-950 to-slate-900 border border-blue-500/10 rounded-2xl p-5 sm:p-6 flex flex-col justify-between space-y-4">
-                <div className="space-y-3">
-                  <div className="flex items-center gap-2 justify-between">
-                    <span className="px-2 py-0.5 bg-blue-500/10 border border-blue-500/20 text-blue-400 font-mono text-[9px] uppercase tracking-wider font-extrabold rounded">
-                      IT Scientist &amp; Web Developer
-                    </span>
-                    <Code className="w-4 h-4 text-blue-400" />
-                  </div>
-                  <div>
-                    <h4 className="text-lg font-black text-white font-display uppercase tracking-wide">
-                      {contacts?.developer_contact?.name || "Collins Kosgei"}
-                    </h4>
-                    <p className="text-[10px] text-slate-400 font-mono uppercase tracking-widest mt-0.5">
-                      Systems Architect
+              {showDeveloperInfo && (
+                <div className="bg-gradient-to-br from-slate-950 to-slate-900 border border-blue-500/20 rounded-2xl p-5 sm:p-6 flex flex-col justify-between space-y-4 max-w-xl mx-auto w-full animate-in zoom-in-95 duration-250">
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-2 justify-between">
+                      <span className="px-2 py-0.5 bg-blue-500/10 border border-blue-500/20 text-blue-400 font-mono text-[9px] uppercase tracking-wider font-extrabold rounded">
+                        IT Scientist &amp; Web Developer
+                      </span>
+                      <Code className="w-4 h-4 text-blue-400" />
+                    </div>
+                    <div>
+                      <h4 className="text-lg font-black text-white font-display uppercase tracking-wide">
+                        {contacts?.developer_contact?.name || "Collins Kosgei"}
+                      </h4>
+                      <p className="text-[10px] text-slate-400 font-mono uppercase tracking-widest mt-0.5">
+                        Systems Architect
+                      </p>
+                    </div>
+                    <p className="text-xs text-slate-300 leading-relaxed font-sans border-t border-white/5 pt-3">
+                      {contacts?.developer_contact?.background || "Collins is a verified information technology professional and a scientist, a full web developer with experience. For a good website call or WhatsApp Collins."}
                     </p>
                   </div>
-                  <p className="text-xs text-slate-300 leading-relaxed font-sans border-t border-white/5 pt-3">
-                    {contacts?.developer_contact?.background || "Collins is a verified information technology professional and a scientist, a full web developer with experience. For a good website call or WhatsApp Collins."}
-                  </p>
-                </div>
 
-                <div className="space-y-2 border-t border-white/5 pt-4">
-                  <div className="flex items-center justify-between text-xs font-mono">
-                    <span className="text-slate-500 uppercase tracking-widest text-[9px]">Mobile Direct:</span>
-                    <a href={`tel:${contacts?.developer_contact?.phone || "254712345678"}`} className="text-blue-400 font-bold hover:underline font-mono">
-                      +{contacts?.developer_contact?.phone || "254712345678"}
-                    </a>
-                  </div>
-                  <div className="flex items-center justify-between text-xs font-mono">
-                    <span className="text-slate-500 uppercase tracking-widest text-[9px]">Email Desk:</span>
-                    <a href={`mailto:${contacts?.developer_contact?.email || "collinskosgei32@gmail.com"}`} className="text-slate-350 font-bold hover:underline font-sans truncate block max-w-[200px]">
-                      {contacts?.developer_contact?.email || "collinskosgei32@gmail.com"}
-                    </a>
-                  </div>
+                  <div className="space-y-2 border-t border-white/5 pt-4">
+                    <div className="flex items-center justify-between text-xs font-mono">
+                      <span className="text-slate-500 uppercase tracking-widest text-[9px]">Mobile Direct:</span>
+                      <a href={`tel:${contacts?.developer_contact?.phone || "254712345678"}`} className="text-blue-400 font-bold hover:underline font-mono">
+                        +{contacts?.developer_contact?.phone || "254712345678"}
+                      </a>
+                    </div>
+                    <div className="flex items-center justify-between text-xs font-mono">
+                      <span className="text-slate-500 uppercase tracking-widest text-[9px]">Email Desk:</span>
+                      <a href={`mailto:${contacts?.developer_contact?.email || "collinskosgei32@gmail.com"}`} className="text-slate-350 font-bold hover:underline font-sans truncate block max-w-[200px]">
+                        {contacts?.developer_contact?.email || "collinskosgei32@gmail.com"}
+                      </a>
+                    </div>
 
-                  <div className="grid grid-cols-2 gap-2 pt-2">
-                    <a 
-                      href={`tel:${contacts?.developer_contact?.phone || "254712345678"}`}
-                      className="py-2.5 bg-slate-800 hover:bg-slate-700 text-center text-white font-extrabold uppercase text-[9px] tracking-wider rounded-xl border border-white/10 transition-all cursor-pointer block"
-                    >
-                      Call Developer
-                    </a>
-                    <a 
-                      href={`https://wa.me/${(contacts?.developer_contact?.phone || "254712345678").replace(/[^0-9]/g, "")}`}
-                      target="_blank"
-                      referrerPolicy="no-referrer"
-                      className="py-2.5 bg-blue-500 hover:bg-blue-600 text-center text-slate-950 font-extrabold uppercase text-[9px] tracking-wider rounded-xl transition-all cursor-pointer block"
-                    >
-                      WhatsApp Chat
-                    </a>
+                    <div className="grid grid-cols-2 gap-2 pt-2">
+                      <a 
+                        href={`tel:${contacts?.developer_contact?.phone || "254712345678"}`}
+                        className="py-2.5 bg-slate-800 hover:bg-slate-700 text-center text-white font-extrabold uppercase text-[9px] tracking-wider rounded-xl border border-white/10 transition-all cursor-pointer block"
+                      >
+                        Call Developer
+                      </a>
+                      <a 
+                        href={`https://wa.me/${(contacts?.developer_contact?.phone || "254712345678").replace(/[^0-9]/g, "")}`}
+                        target="_blank"
+                        referrerPolicy="no-referrer"
+                        className="py-2.5 bg-blue-500 hover:bg-blue-600 text-slate-955 text-center font-extrabold uppercase text-[9px] tracking-wider rounded-xl transition-all cursor-pointer block"
+                      >
+                        WhatsApp Chat
+                      </a>
+                    </div>
                   </div>
                 </div>
-              </div>
+              )}
             </div>
 
             <div className="pt-4 border-t border-slate-800 text-[10px] text-slate-500 font-sans tracking-wide leading-relaxed text-center">
