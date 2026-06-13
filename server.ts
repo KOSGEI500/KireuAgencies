@@ -102,6 +102,12 @@ async function getFirestoreClient(): Promise<any> {
   return firestore;
 }
 
+interface Admin {
+  email: string;
+  name: string;
+  pin: string;
+}
+
 // Structure of our Parent-Child relational model
 interface DBModel {
   properties: Property[];
@@ -114,6 +120,7 @@ interface DBModel {
   room_requests?: RoomRequest[];
   developer_contact?: ContactInfo;
   owner_contact?: ContactInfo;
+  admins?: Admin[];
   last_ready_timestamp?: string;
 }
 
@@ -139,6 +146,10 @@ const INITIAL_DB: DBModel = {
     email: "",
     background: ""
   },
+  admins: [
+    { email: "collinskosgei32@gmail.com", name: "Collins Kosgei", pin: "KIREU-COLLINS-32" },
+    { email: "kireuagencyltd1@gmail.com", name: "Kireu Executive", pin: "KIREU-EXEC-11" }
+  ],
   last_ready_timestamp: "2026-06-11T00:00:00.000Z"
 };
 
@@ -213,6 +224,7 @@ async function syncFromFirestore(): Promise<DBModel> {
       if (!firestoreDb.room_requests) firestoreDb.room_requests = [];
       if (!firestoreDb.developer_contact) firestoreDb.developer_contact = { ...INITIAL_DB.developer_contact };
       if (!firestoreDb.owner_contact) firestoreDb.owner_contact = { ...INITIAL_DB.owner_contact };
+      if (!firestoreDb.admins) firestoreDb.admins = [];
 
       // Detect if the persistent database contains old seed data and purge it for a clean slate (safely targeting unique prop_1 mock ID)
       const containsOldSeedData = firestoreDb.properties && firestoreDb.properties.some(p => p.property_id === "prop_1");
@@ -275,6 +287,7 @@ async function syncFromFirestore(): Promise<DBModel> {
     // Ensure contacts are correctly seeded
     if (!dbToUse.developer_contact) dbToUse.developer_contact = { ...INITIAL_DB.developer_contact };
     if (!dbToUse.owner_contact) dbToUse.owner_contact = { ...INITIAL_DB.owner_contact };
+    if (!dbToUse.admins) dbToUse.admins = [];
     
     cachedDb = dbToUse;
     try {
@@ -362,6 +375,18 @@ function readDB(): DBModel {
     if (!parsed.caretakers) parsed.caretakers = [];
     if (!parsed.sms_logs) parsed.sms_logs = [];
     if (!parsed.room_requests) parsed.room_requests = [];
+    if (!parsed.admins) parsed.admins = [];
+    if (parsed.admins.length === 0) {
+      parsed.admins = [
+        { email: "collinskosgei32@gmail.com", name: "Collins Kosgei", pin: "KIREU-COLLINS-32" },
+        { email: "kireuagencyltd1@gmail.com", name: "Kireu Executive", pin: "KIREU-EXEC-11" }
+      ];
+    }
+    const hasCollins = parsed.admins.some(a => a.email.toLowerCase() === "collinskosgei32@gmail.com");
+    if (!hasCollins) {
+      parsed.admins.unshift({ email: "collinskosgei32@gmail.com", name: "Collins Kosgei", pin: "KIREU-COLLINS-32" });
+    }
+
     if (!parsed.developer_contact) {
       parsed.developer_contact = { ...INITIAL_DB.developer_contact };
     }
@@ -905,6 +930,64 @@ app.delete("/api/developer/backups/:id", async (req, res) => {
   }
 });
 
+// SUPER-ADMINS DYNAMIC CONFIGURATION ENDPOINTS
+app.get("/api/developer/admins", (req, res) => {
+  const db = readDB();
+  res.json(db.admins || []);
+});
+
+app.post("/api/developer/admins", (req, res) => {
+  const db = readDB();
+  const { email, name } = req.body;
+  if (!email || !name) {
+    return res.status(400).json({ error: "Email and Name are required." });
+  }
+
+  const cleanEmail = email.trim().toLowerCase();
+
+  db.admins = db.admins || [];
+  const exists = db.admins.some(a => a.email.toLowerCase() === cleanEmail);
+  if (exists) {
+    return res.status(400).json({ error: "An admin with this email is already registered." });
+  }
+
+  // Generate random pin like KIREU-EXEC-XX where XX is 10 to 99
+  const randomSuffix = Math.floor(10 + Math.random() * 90);
+  const generatedPin = `KIREU-EXEC-${randomSuffix}`;
+
+  const newAdmin: Admin = {
+    email: cleanEmail,
+    name: name.trim(),
+    pin: generatedPin
+  };
+
+  db.admins.push(newAdmin);
+  writeDB(db);
+
+  res.json({ success: true, message: "Super-Admin successfully added.", admin: newAdmin, admins: db.admins });
+});
+
+app.delete("/api/developer/admins/:email", (req, res) => {
+  const db = readDB();
+  const { email } = req.params;
+  const cleanEmail = email.trim().toLowerCase();
+
+  if (cleanEmail === "collinskosgei32@gmail.com") {
+    return res.status(400).json({ error: "The primary developer account cannot be removed." });
+  }
+
+  db.admins = db.admins || [];
+  const initialLen = db.admins.length;
+  db.admins = db.admins.filter(a => a.email.toLowerCase() !== cleanEmail);
+
+  if (db.admins.length === initialLen) {
+    return res.status(404).json({ error: "Admin with that email not found." });
+  }
+
+  writeDB(db);
+  res.json({ success: true, message: "Super-Admin successfully deleted.", admins: db.admins });
+});
+
 // CONTACT INFO ENDPOINTS
 app.get("/api/contact", (req, res) => {
   const db = readDB();
@@ -1391,14 +1474,16 @@ app.post("/api/auth/admin/google-login", (req, res) => {
     }
 
     const normalizedEmail = email.toLowerCase();
+    const db = readDB();
 
-    // Check if the authenticated Google email matches collinskosgei32@gmail.com or kireuagencyltd1@gmail.com
-    if (normalizedEmail === "collinskosgei32@gmail.com" || normalizedEmail === "kireuagencyltd1@gmail.com") {
+    // Check if the authenticated Google email matches one of the dynamic super-admins
+    const authorizedAdmin = db.admins?.find(a => a.email.toLowerCase() === normalizedEmail);
+    if (authorizedAdmin) {
       return res.json({
         success: true,
         session: {
           role: "Super-Admin",
-          name: name || (normalizedEmail === "collinskosgei32@gmail.com" ? "Collins Kosgei" : "Kireu Executive"),
+          name: authorizedAdmin.name || name || "Super-Admin Executive",
           email: email,
           firebase_uid: uid
         }
@@ -1406,7 +1491,6 @@ app.post("/api/auth/admin/google-login", (req, res) => {
     }
 
     // Look up if any active plots/properties have this caretaker email assigned
-    const db = readDB();
     const matchedProp = db.properties.find(
       (p) => p.caretaker_email && p.caretaker_email.toLowerCase() === normalizedEmail
     );
@@ -1443,7 +1527,7 @@ app.post("/api/auth/admin/google-login", (req, res) => {
     }
 
     return res.status(403).json({
-      error: `Access Denied: '${email}' is not authorized. Only collinskosgei32@gmail.com, kireuagencyltd1@gmail.com, or registered caretakers can log in.`
+      error: "Access Denied: Unregistered account. Please contact the administrator for authorized access."
     });
   } catch (err: any) {
     console.error("Internal server error during Google login validation:", err);
@@ -1457,6 +1541,19 @@ app.post("/api/auth/admin/login", (req, res) => {
   const normalizedPin = sanitizedPin.toUpperCase();
 
   if (role === "Super-Admin") {
+    const db = readDB();
+    const matchedAdmin = db.admins?.find(a => a.pin.trim().toUpperCase() === normalizedPin);
+    if (matchedAdmin) {
+      return res.json({
+        success: true,
+        session: {
+          role: "Super-Admin",
+          name: matchedAdmin.name,
+          email: matchedAdmin.email
+        }
+      });
+    }
+
     if (normalizedPin === "KIREU-COLLINS-32") {
       return res.json({
         success: true,

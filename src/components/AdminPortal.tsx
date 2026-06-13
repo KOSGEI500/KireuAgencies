@@ -74,7 +74,7 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
   const [expandedPaidTenantId, setExpandedPaidTenantId] = useState<string | null>(null);
 
   // Tab State with "clock" view support
-  const [activeTab, setActiveTab] = useState<"dashboard" | "rooms" | "tenants" | "payments" | "maintenance" | "properties" | "clock" | "caretakers" | "sms" | "requests" | "developer_google" | "developer_mpesa" | "developer_at" | "contact_config">("dashboard");
+  const [activeTab, setActiveTab] = useState<"dashboard" | "rooms" | "tenants" | "payments" | "maintenance" | "properties" | "clock" | "caretakers" | "sms" | "requests" | "developer_google" | "developer_admins" | "developer_mpesa" | "developer_at" | "contact_config">("dashboard");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   useEffect(() => {
@@ -82,7 +82,7 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
       const hash = window.location.hash;
       if (hash.startsWith("#/admin/")) {
         const tab = hash.replace("#/admin/", "") as any;
-        const validTabs = ["dashboard", "rooms", "tenants", "payments", "maintenance", "properties", "clock", "caretakers", "sms", "requests", "developer_google", "developer_mpesa", "developer_at", "contact_config"];
+        const validTabs = ["dashboard", "rooms", "tenants", "payments", "maintenance", "properties", "clock", "caretakers", "sms", "requests", "developer_google", "developer_admins", "developer_mpesa", "developer_at", "contact_config"];
         if (validTabs.includes(tab)) {
           setActiveTab(tab);
         }
@@ -114,6 +114,86 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
   const [loadingContact, setLoadingContact] = useState(false);
   const [contactSuccessMsg, setContactSuccessMsg] = useState("");
   const [contactErrorMsg, setContactErrorMsg] = useState("");
+
+  // States for dynamic Super-Admin emails management
+  const [adminList, setAdminList] = useState<{ email: string; name: string; pin: string }[]>([]);
+  const [newAdminEmail, setNewAdminEmail] = useState("");
+  const [newAdminName, setNewAdminName] = useState("");
+  const [adminSuccessMsg, setAdminSuccessMsg] = useState("");
+  const [adminErrorMsg, setAdminErrorMsg] = useState("");
+  const [loadingAdmins, setLoadingAdmins] = useState(false);
+
+  const fetchAdmins = async () => {
+    setLoadingAdmins(true);
+    try {
+      const response = await fetch("/api/developer/admins");
+      if (response.ok) {
+        const data = await response.json();
+        setAdminList(data);
+      }
+    } catch (err) {
+      console.error("Error fetching admin list:", err);
+    } finally {
+      setLoadingAdmins(false);
+    }
+  };
+
+  const handleAddAdmin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newAdminEmail || !newAdminName) return;
+    setLoadingAdmins(true);
+    setAdminSuccessMsg("");
+    setAdminErrorMsg("");
+    try {
+      const response = await fetch("/api/developer/admins", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: newAdminEmail, name: newAdminName })
+      });
+      const data = await response.json();
+      if (response.ok) {
+        setAdminSuccessMsg(`Successfully added admin ${data.admin.name}. PIN generated: ${data.admin.pin}`);
+        setNewAdminEmail("");
+        setNewAdminName("");
+        setAdminList(data.admins);
+      } else {
+        setAdminErrorMsg(data.error || "Failed to add super admin.");
+      }
+    } catch (err) {
+      setAdminErrorMsg("Network error adding super admin.");
+    } finally {
+      setLoadingAdmins(false);
+    }
+  };
+
+  const handleDeleteAdmin = async (email: string) => {
+    if (email === "collinskosgei32@gmail.com") {
+      alert("You cannot remove the developer email!");
+      return;
+    }
+    if (!window.confirm(`Are you sure you want to remove ${email} from Super-Admins?`)) {
+      return;
+    }
+    setLoadingAdmins(true);
+    setAdminSuccessMsg("");
+    setAdminErrorMsg("");
+    try {
+      const response = await fetch(`/api/developer/admins/${encodeURIComponent(email)}`, {
+        method: "DELETE"
+      });
+      const data = await response.json();
+      if (response.ok) {
+        setAdminSuccessMsg("Super-Admin successfully deleted.");
+        setAdminList(data.admins);
+      } else {
+        setAdminErrorMsg(data.error || "Failed to delete super admin.");
+      }
+    } catch (err) {
+      setAdminErrorMsg("Network error deleting super admin.");
+    } finally {
+      setLoadingAdmins(false);
+    }
+  };
 
   // States for Disaster backups & selective recovery
   interface BackupPoint {
@@ -171,7 +251,7 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
     }
   };
 
-  const handleTabClick = (tab: "dashboard" | "rooms" | "tenants" | "payments" | "maintenance" | "properties" | "clock" | "caretakers" | "sms" | "requests" | "developer_google" | "developer_mpesa" | "developer_at" | "contact_config") => {
+  const handleTabClick = (tab: "dashboard" | "rooms" | "tenants" | "payments" | "maintenance" | "properties" | "clock" | "caretakers" | "sms" | "requests" | "developer_google" | "developer_admins" | "developer_mpesa" | "developer_at" | "contact_config") => {
     window.location.hash = `#/admin/${tab}`;
     setMobileMenuOpen(false);
   };
@@ -524,6 +604,12 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
         .finally(() => {
           setDevLoading(false);
         });
+    }
+  }, [activeTab, session.email]);
+
+  useEffect(() => {
+    if (activeTab === "developer_admins" && session.email?.toLowerCase().trim() === "collinskosgei32@gmail.com") {
+      fetchAdmins();
     }
   }, [activeTab, session.email]);
 
@@ -1723,6 +1809,16 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
               >
                 <div className={`w-1.5 h-1.5 rounded-full ${activeTab === "contact_config" ? "bg-white" : "bg-emerald-400"}`} />
                 <span>Public Contact Config</span>
+              </button>
+
+              <button
+                onClick={() => handleTabClick("developer_admins")}
+                className={`w-full flex items-center gap-2 px-3 py-1.5 text-[11px] font-semibold rounded-lg transition-all text-left pl-5 ${
+                  activeTab === "developer_admins" ? "sidebar-active text-white bg-emerald-600 shadow-xs" : "text-emerald-400 hover:text-white hover:bg-slate-800"
+                }`}
+              >
+                <div className={`w-1.5 h-1.5 rounded-full ${activeTab === "developer_admins" ? "bg-white" : "bg-emerald-400"}`} />
+                <span>Manage Super-Admins</span>
               </button>
             </div>
           )}
@@ -4992,6 +5088,181 @@ export default function AdminPortal({ session, properties, onLogout, onRefreshPr
 
             <div className="p-4 bg-emerald-50/45 border border-emerald-100 rounded-2xl text-[11px] text-emerald-850 tracking-wide font-sans leading-relaxed text-center">
               💡 <strong>Instant Sync Tip:</strong> Changing these fields writes directly onto the database file. They instantly refresh client modals on the estate landing pages.
+            </div>
+          </div>
+        )}
+
+        {/* 13. DYNAMIC SUPER-ADMINS CONFIGURATION TAB */}
+        {activeTab === "developer_admins" && (
+          <div className="space-y-6 text-left animate-in fade-in duration-200">
+            <div className="bg-slate-900 rounded-3xl p-6 sm:p-8 text-white relative overflow-hidden border border-slate-800 shadow-xl">
+              <div className="absolute top-0 right-0 w-96 h-96 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none"></div>
+              
+              <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6 relative z-10">
+                <div className="space-y-2">
+                  <div className="inline-flex items-center gap-2 px-3 py-1 bg-emerald-500/15 rounded-full border border-emerald-500/20 text-emerald-400 font-mono text-[10px] font-bold uppercase tracking-wider">
+                    <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-ping"></span>
+                    Dynamic Super-Admin Access Gates
+                  </div>
+                  <h2 className="text-2xl font-extrabold font-display tracking-tight text-white flex items-center gap-2">
+                    <Users className="w-6 h-6 text-emerald-400 shrink-0" />
+                    <span>Manage Platform Administrator Accounts</span>
+                  </h2>
+                  <p className="text-slate-400 text-xs max-w-xl leading-relaxed font-sans">
+                    Enable or disable admin rights for other accounts by managing authorized Google sign-in emails. Adding a user also auto-generates a key PIN with <strong className="text-emerald-400">KIREU-EXEC-XX</strong> format that is immediately functional for alternative passkey login!
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Notifications panel */}
+            {(adminSuccessMsg || adminErrorMsg) && (
+              <div className={`p-4 rounded-xl text-xs flex items-start gap-2.5 ${
+                adminSuccessMsg 
+                  ? "bg-emerald-50 border border-emerald-150 text-emerald-800"
+                  : "bg-rose-50 border border-rose-150 text-rose-800"
+              }`}>
+                <AlertCircle className={`w-4 h-4 shrink-0 mt-0.5 ${adminSuccessMsg ? "text-emerald-500" : "text-rose-500"}`} />
+                <div>
+                  <span className="font-bold uppercase block mb-0.5">
+                    {adminSuccessMsg ? "Success Alert" : "Authorization Error"}
+                  </span>
+                  {adminSuccessMsg || adminErrorMsg}
+                </div>
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              {/* Form to Register Super Admin */}
+              <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-xs high-contrast-card flex flex-col justify-between h-fit lg:col-span-1">
+                <div>
+                  <div className="mb-5 text-left">
+                    <div className="flex items-center gap-2">
+                      <div className="p-1.5 bg-emerald-50 rounded-lg">
+                        <PlusCircle className="w-4 h-4 text-emerald-600" />
+                      </div>
+                      <h3 className="font-bold text-sm text-slate-900 font-display uppercase tracking-wider">
+                        Authorize Admin
+                      </h3>
+                    </div>
+                    <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
+                      Register an email address to yield full administrative access to plots, finance, and system operations.
+                    </p>
+                  </div>
+
+                  <form onSubmit={handleAddAdmin} className="space-y-4 font-sans max-w-full text-left">
+                    <div className="space-y-1.5">
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">Admin Full Name</label>
+                      <input
+                        type="text"
+                        required
+                        value={newAdminName}
+                        onChange={(e) => setNewAdminName(e.target.value)}
+                        placeholder="e.g. John Doe Executive"
+                        className="w-full bg-slate-50 border border-slate-200 focus:bg-white focus:ring-1 focus:ring-emerald-400 text-slate-800 text-xs rounded-lg py-2 px-3 focus:outline-none"
+                      />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">Google Email Address</label>
+                      <input
+                        type="email"
+                        required
+                        value={newAdminEmail}
+                        onChange={(e) => setNewAdminEmail(e.target.value)}
+                        placeholder="e.g. example@gmail.com"
+                        className="w-full bg-slate-50 border border-slate-200 focus:bg-white focus:ring-1 focus:ring-emerald-400 text-slate-800 text-xs rounded-lg py-2 px-3 focus:outline-none"
+                      />
+                    </div>
+
+                    <div className="pt-3 border-t border-slate-100 flex justify-end">
+                      <button
+                        type="submit"
+                        disabled={loadingAdmins}
+                        className="w-full px-5 py-2.5 bg-emerald-600 text-white hover:bg-emerald-505 disabled:bg-slate-350 text-[10px] tracking-wider font-extrabold uppercase rounded-xl transition-all shadow-md flex items-center justify-center gap-1.5 cursor-pointer"
+                      >
+                        <span>{loadingAdmins ? "Authorizing..." : "Register & Yield PIN ✔"}</span>
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+
+              {/* List of Active Registered Admins */}
+              <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-xs high-contrast-card flex flex-col h-fit lg:col-span-2">
+                <div className="mb-5 text-left border-b border-slate-100 pb-4">
+                  <div className="flex items-center gap-2">
+                    <div className="p-1.5 bg-blue-50 rounded-lg">
+                      <Users className="w-4 h-4 text-blue-600" />
+                    </div>
+                    <h3 className="font-bold text-sm text-slate-900 font-display uppercase tracking-wider">
+                      Active Super-Admins ({adminList.length})
+                    </h3>
+                  </div>
+                  <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
+                    Review and modify current super-admins. The primary developer account (Collins Kosgei) is protected and cannot be modified.
+                  </p>
+                </div>
+
+                {loadingAdmins && adminList.length === 0 ? (
+                  <div className="py-12 text-center text-xs text-slate-400 font-medium">
+                    Refreshing super-admin accounts...
+                  </div>
+                ) : adminList.length === 0 ? (
+                  <div className="py-12 text-center text-xs text-slate-400 font-medium">
+                    No administrators found in store.
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full border-collapse text-left text-xs font-sans">
+                      <thead>
+                        <tr className="border-b border-slate-100 text-[10px] font-extrabold text-slate-400 uppercase tracking-widest bg-slate-50/50">
+                          <th className="py-3 px-4">Authorized Admin</th>
+                          <th className="py-3 px-4">Sign-In Google Email</th>
+                          <th className="py-3 px-4">Fallback Login PIN</th>
+                          <th className="py-3 px-4 text-right">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {adminList.map((admin) => (
+                          <tr key={admin.email} className="border-b border-slate-100 hover:bg-slate-50/30 transition-all font-semibold">
+                            <td className="py-3.5 px-4 text-slate-950">
+                              <span className="block font-bold">{admin.name}</span>
+                              {admin.email === "collinskosgei32@gmail.com" && (
+                                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-blue-50 text-blue-600 border border-blue-100 text-[8px] uppercase tracking-wider rounded-md font-mono mt-0.5">
+                                  👑 ROOT OWNER
+                                </span>
+                              )}
+                            </td>
+                            <td className="py-3.5 px-4 text-slate-500 font-mono text-[11px]">{admin.email}</td>
+                            <td className="py-3.5 px-4">
+                              <code className="text-[11px] font-bold text-emerald-600 bg-emerald-50 px-2 py-1 rounded border border-emerald-100 uppercase tracking-wider font-mono">
+                                {admin.pin}
+                              </code>
+                            </td>
+                            <td className="py-3.5 px-4 text-right">
+                              {admin.email === "collinskosgei32@gmail.com" ? (
+                                <span className="text-[10px] text-slate-400/80 font-bold uppercase tracking-wider select-none pr-2">
+                                  System Protected
+                                </span>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteAdmin(admin.email)}
+                                  className="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 hover:text-rose-700 text-rose-600 border border-rose-100 rounded-lg text-[10px] uppercase font-extrabold transition-all cursor-pointer"
+                                  title="Revoke Admin Permission permanent"
+                                >
+                                  Revoke
+                                </button>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         )}
