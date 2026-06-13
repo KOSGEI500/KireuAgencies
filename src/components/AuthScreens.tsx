@@ -716,7 +716,7 @@ export default function AuthScreens({ properties, onAdminLogin, onTenantLogin }:
                     </svg>
                     <span>Continue with Google</span>
                   </button>
-                </div></div>
+                </div>
 
               </div>
             </div>

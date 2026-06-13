@@ -883,7 +883,11 @@ Thank you for your prompt transaction. Please keep this slip for reference.
             className="p-1.5 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white transition-all cursor-pointer"
             title="Dismiss Sidebar"
           >
-                   {/* Sidebar Navigation Options */}
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* Sidebar Navigation Options */}
         <nav className="flex-1 p-4 space-y-1.5 overflow-y-auto text-left">
           <span className="block text-[9px] font-bold text-slate-500 uppercase tracking-widest font-mono mb-2 px-2">
             Navigation Views
